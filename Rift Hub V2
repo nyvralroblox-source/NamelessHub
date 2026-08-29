@@ -1,0 +1,4225 @@
+--[[
+	Base UI - Linoria Library
+	Onglets : Main - Rage - Visual - Player - Config
+]]
+
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+local Options = Library.Options
+local Toggles = Library.Toggles
+
+Library.ForceCheckbox = false
+Library.ShowToggleFrameInKeybinds = true
+
+-- ==========================
+-- Fenêtre principale
+-- ==========================
+local Window = Library:CreateWindow({
+	Title = "Rift Counter", -- <- change ici le nom de ton menu
+	Footer = "version: 2.5",
+	Icon = "crosshair",
+	NotifySide = "Right",
+	ShowCustomCursor = true,
+})
+
+-- ==========================
+-- Création des 5 onglets
+-- ==========================
+local Tabs = {
+	Main = Window:AddTab("Main", "sun"),
+	Rage = Window:AddTab("Rage", "crosshair"),
+	World = Window:AddTab("World", "globe"),
+	Visual = Window:AddTab("Visual", "eye"),
+	Player = Window:AddTab("Player", "user"),
+	Credits  = Window:AddTab("Credits", "heart"),
+	Config = Window:AddTab("Config", "settings"),
+}
+
+-- ==========================
+-- MAIN
+-- ==========================
+local MainGroupBox = Tabs.Main:AddLeftGroupbox("Général", "info")
+MainGroupBox:AddLabel("Welcome to Rift Counter Hub. Designed with speed, stability, and a modern interface in mind, Rift Counter Hub brings together a collection of advanced features in a clean and intuitive experience. Every module is built with performance and responsiveness as a priority, making the hub easy to use while remaining powerful and consistently updated.", true)
+
+local MainRightGroupBox = Tabs.Main:AddRightGroupbox("Silent Lock", "sliders")
+
+local BoostGroupBox = Tabs.Main:AddRightGroupbox("Boost", "zap")
+
+local RageBotGroupBox = Tabs.Main:AddRightGroupbox("Rage Bot", "crosshair")
+
+local ShotgunRageGroupBox = Tabs.Main:AddRightGroupbox("Shotgun Rage", "crosshair")
+
+-- ==========================
+-- BOOST CONFIGURATION
+-- ==========================
+local BoostPlayers = game:GetService("Players")
+local BoostLocalPlayer = BoostPlayers.LocalPlayer
+local BoostRunService = game:GetService("RunService")
+
+local BoostConfig = {
+	WalkSpeedEnabled = false,
+	WalkSpeedValue = 32,
+	JumpPowerEnabled = false,
+	JumpPowerValue = 100
+}
+
+local BoostOriginalWalkSpeed = 16
+local BoostOriginalJumpPower = 50
+local BoostOriginalFriction = 0.3
+local BoostConnection = nil
+
+local function ApplyBoost()
+	local character = BoostLocalPlayer.Character
+	if not character then return end
+	
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+	
+	-- WalkSpeed
+	if BoostConfig.WalkSpeedEnabled then
+		humanoid.WalkSpeed = BoostConfig.WalkSpeedValue
+	end
+	
+	-- JumpPower
+	if BoostConfig.JumpPowerEnabled then
+		humanoid.JumpPower = BoostConfig.JumpPowerValue
+	end
+end
+
+local function StartBoostLoop()
+	if BoostConnection then
+		BoostConnection:Disconnect()
+	end
+	
+	BoostConnection = BoostRunService.RenderStepped:Connect(function()
+		ApplyBoost()
+	end)
+end
+
+local function StopBoostLoop()
+	if BoostConnection then
+		BoostConnection:Disconnect()
+		BoostConnection = nil
+	end
+	
+	-- Restaurer les valeurs originales
+	local character = BoostLocalPlayer.Character
+	if character then
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.WalkSpeed = BoostOriginalWalkSpeed
+			humanoid.JumpPower = BoostOriginalJumpPower
+		end
+	end
+end
+
+local function SaveOriginalValues()
+	local character = BoostLocalPlayer.Character
+	if not character then return end
+	
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		BoostOriginalWalkSpeed = humanoid.WalkSpeed
+		BoostOriginalJumpPower = humanoid.JumpPower
+	end
+end
+
+-- Sauvegarder les valeurs originales au démarrage
+SaveOriginalValues()
+
+-- Mettre à jour quand le personnage respawn
+BoostLocalPlayer.CharacterAdded:Connect(function()
+	task.wait(1)
+	SaveOriginalValues()
+	if BoostConfig.WalkSpeedEnabled or BoostConfig.JumpPowerEnabled then
+		StartBoostLoop()
+	end
+end)
+
+-- Interface Boost
+BoostGroupBox:AddToggle("BoostWalkSpeedEnabled", {
+	Text = "Vitesse de marche boostée",
+	Default = false,
+	Callback = function(Value)
+		BoostConfig.WalkSpeedEnabled = Value
+		if Value or BoostConfig.JumpPowerEnabled then
+			StartBoostLoop()
+		else
+			StopBoostLoop()
+		end
+	end,
+})
+
+BoostGroupBox:AddSlider("BoostWalkSpeedValue", {
+	Text = "Vitesse de marche",
+	Default = 32,
+	Min = 16,
+	Max = 100,
+	Rounding = 0,
+	Callback = function(Value)
+		BoostConfig.WalkSpeedValue = Value
+	end,
+})
+
+BoostGroupBox:AddToggle("BoostJumpPowerEnabled", {
+	Text = "Saut boosté",
+	Default = false,
+	Callback = function(Value)
+		BoostConfig.JumpPowerEnabled = Value
+		if Value or BoostConfig.WalkSpeedEnabled then
+			StartBoostLoop()
+		else
+			StopBoostLoop()
+		end
+	end,
+})
+
+BoostGroupBox:AddSlider("BoostJumpPowerValue", {
+	Text = "Puissance de saut",
+	Default = 100,
+	Min = 50,
+	Max = 200,
+	Rounding = 0,
+	Callback = function(Value)
+		BoostConfig.JumpPowerValue = Value
+	end,
+})
+
+-- ==========================
+-- RAGE BOT
+-- ==========================
+local RageBotPlayers = game:GetService("Players")
+local RageBotLocalPlayer = RageBotPlayers.LocalPlayer
+local RageBotRunService = game:GetService("RunService")
+local RageBotUserInputService = game:GetService("UserInputService")
+
+local RageBotConfig = {
+	Enabled = false,
+	TeamCheck = true,
+	TeleportDistance = 10, -- Distance en dessous du joueur
+	MinHealth = 1, -- Santé minimale de la cible pour être valide
+	TookDamage = false, -- Indicateur si on a pris des dégâts
+	LastHealth = 100, -- Dernière santé connue
+	OriginalCameraType = nil, -- Sauvegarder le CameraType original
+	OriginalCameraCFrame = nil, -- Sauvegarder la position originale de la caméra
+	RotationSpeed = 180, -- Vitesse de rotation (degrés par seconde)
+	RotationRadius = 3, -- Rayon de rotation autour de la cible
+	CurrentAngle = 0, -- Angle actuel de rotation
+}
+
+local RageBotConnection = nil
+local RageBotStatusText = Drawing.new("Text")
+RageBotStatusText.Visible = false
+RageBotStatusText.Text = "Rage Bot: Inactif"
+RageBotStatusText.Size = 14
+RageBotStatusText.Color = Color3.fromRGB(255, 50, 50)
+RageBotStatusText.Outline = true
+RageBotStatusText.OutlineColor = Color3.fromRGB(0, 0, 0)
+RageBotStatusText.Center = false
+
+local function GetRageBotTarget()
+	local character = RageBotLocalPlayer.Character
+	if not character then return nil end
+	
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return nil end
+	
+	for _, player in pairs(RageBotPlayers:GetPlayers()) do
+		if player == RageBotLocalPlayer then continue end
+		
+		local targetCharacter = player.Character
+		if not targetCharacter then continue end
+		
+		local humanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+		if not humanoid or humanoid.Health <= 0 then continue end
+		
+		-- Health check : vérifier que la cible a assez de santé
+		if humanoid.Health < RageBotConfig.MinHealth then continue end
+		
+		-- Team check : vérifier que la cible n'est pas dans la même équipe
+		if RageBotConfig.TeamCheck then
+			if player.Team and RageBotLocalPlayer.Team and player.Team == RageBotLocalPlayer.Team then
+				continue
+			end
+		end
+		
+		return player
+	end
+	
+	return nil
+end
+
+local function RageBotCycle()
+	if not RageBotConfig.Enabled then return end
+	
+	local character = RageBotLocalPlayer.Character
+	if not character then return end
+	
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return end
+	
+	-- Ancrer le personnage pour éviter de tomber
+	humanoidRootPart.Anchored = true
+	
+	local target = GetRageBotTarget()
+	
+	if target then
+		-- Changer la couleur en rouge si on a pris des dégâts
+		if RageBotConfig.TookDamage then
+			RageBotStatusText.Text = "Rage Bot: DÉGÂTS - Téléportation vide..."
+			RageBotStatusText.Color = Color3.fromRGB(255, 0, 0)
+		else
+			RageBotStatusText.Text = "Rage Bot: Cible trouvée - Téléportation..."
+			RageBotStatusText.Color = Color3.fromRGB(50, 255, 50)
+		end
+		
+		local targetCharacter = target.Character
+		if targetCharacter then
+			local targetHumanoidRootPart = targetCharacter:FindFirstChild("HumanoidRootPart")
+			if targetHumanoidRootPart then
+				-- Mettre à jour l'angle de rotation
+				local deltaTime = 1/60 -- Environ 60 FPS
+				RageBotConfig.CurrentAngle = (RageBotConfig.CurrentAngle + RageBotConfig.RotationSpeed * deltaTime) % 360
+				
+				-- Calculer la position rotative autour de la cible
+				local targetPos = targetHumanoidRootPart.Position
+				local angleRad = math.rad(RageBotConfig.CurrentAngle)
+				
+				-- Position en dessous avec rotation
+				local offsetX = math.cos(angleRad) * RageBotConfig.RotationRadius
+				local offsetZ = math.sin(angleRad) * RageBotConfig.RotationRadius
+				local teleportPos = targetPos + Vector3.new(offsetX, -RageBotConfig.TeleportDistance, offsetZ)
+				
+				-- Créer un CFrame qui regarde vers le ciel (rotation -90 degrés sur l'axe X)
+				-- Cela oriente le personnage pour regarder vers le haut
+				local lookAtSkyCFrame = CFrame.new(teleportPos) * CFrame.Angles(math.rad(-90), 0, 0)
+				
+				-- Technique Shotgun Rage : CFrame.new(position, lookAt) direct
+				local orbitPosition = targetPos + Vector3.new(offsetX, -RageBotConfig.TeleportDistance, offsetZ)
+				
+				-- Positionner le joueur et le faire regarder vers le ciel
+				humanoidRootPart.CFrame = CFrame.new(orbitPosition, targetPos) * CFrame.Angles(math.rad(-90), 0, 0)
+			end
+		end
+	else
+		RageBotStatusText.Text = "Rage Bot: Recherche cible..."
+		RageBotStatusText.Color = Color3.fromRGB(255, 255, 50)
+		-- Réinitialiser l'indicateur de dégâts quand on n'a plus de cible
+		RageBotConfig.TookDamage = false
+	end
+end
+
+local function EnableRageBot()
+	RageBotConfig.Enabled = true
+	RageBotConfig.TookDamage = false
+	RageBotStatusText.Visible = true
+	
+	-- Initialiser la dernière santé
+	local character = RageBotLocalPlayer.Character
+	if character then
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			RageBotConfig.LastHealth = humanoid.Health
+		end
+	end
+	
+	-- Sauvegarder et désynchroniser la caméra
+	local camera = workspace.CurrentCamera
+	if camera then
+		RageBotConfig.OriginalCameraType = camera.CameraType
+		RageBotConfig.OriginalCameraCFrame = camera.CFrame
+		camera.CameraType = Enum.CameraType.Scriptable -- Mode scriptable pour contrôle total
+	end
+	
+	if RageBotConnection then
+		RageBotConnection:Disconnect()
+	end
+	
+	RageBotConnection = RageBotRunService.RenderStepped:Connect(function()
+		-- Mettre à jour la position du texte pour suivre le curseur de la souris
+		local mousePos = RageBotUserInputService:GetMouseLocation()
+		RageBotStatusText.Position = Vector2.new(mousePos.X + 15, mousePos.Y + 15)
+		
+		-- Garder la caméra fixe à sa position originale
+		local camera = workspace.CurrentCamera
+		if camera and RageBotConfig.OriginalCameraCFrame then
+			camera.CFrame = RageBotConfig.OriginalCameraCFrame
+		end
+		
+		-- Détecter les dégâts
+		local character = RageBotLocalPlayer.Character
+		if character then
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				if humanoid.Health < RageBotConfig.LastHealth then
+					RageBotConfig.TookDamage = true
+				end
+				RageBotConfig.LastHealth = humanoid.Health
+			end
+		end
+		
+		local ok, err = pcall(RageBotCycle)
+		if not ok then
+			warn("[RageBot] Erreur: " .. tostring(err))
+		end
+	end)
+end
+
+local function DisableRageBot()
+	RageBotConfig.Enabled = false
+	RageBotConfig.TookDamage = false
+	RageBotStatusText.Visible = false
+	RageBotStatusText.Text = "Rage Bot: Inactif"
+	
+	-- Désancrer le personnage
+	local character = RageBotLocalPlayer.Character
+	if character then
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		if humanoidRootPart then
+			humanoidRootPart.Anchored = false
+		end
+	end
+	
+	-- Restaurer la caméra
+	local camera = workspace.CurrentCamera
+	if camera then
+		if RageBotConfig.OriginalCameraType then
+			camera.CameraType = RageBotConfig.OriginalCameraType
+		end
+	end
+	
+	if RageBotConnection then
+		RageBotConnection:Disconnect()
+		RageBotConnection = nil
+	end
+end
+
+-- Interface Rage Bot
+RageBotGroupBox:AddToggle("RageBotEnabled", {
+	Text = "Activer Rage Bot",
+	Default = false,
+	Callback = function(Value)
+		if Value then
+			EnableRageBot()
+		else
+			DisableRageBot()
+		end
+	end,
+})
+
+RageBotGroupBox:AddLabel("Keybind Rage Bot"):AddKeyPicker("RageBotKeybind", {
+	Default = "None",
+	Mode = "Toggle",
+	Text = "Keybind Rage Bot",
+	Callback = function()
+		local currentState = Toggles.RageBotEnabled.Value
+		Toggles.RageBotEnabled:SetValue(not currentState)
+		
+		if not currentState then
+			EnableRageBot()
+		else
+			DisableRageBot()
+		end
+	end,
+})
+
+RageBotGroupBox:AddToggle("RageBotTeamCheck", {
+	Text = "Team Check",
+	Default = true,
+	Callback = function(Value)
+		RageBotConfig.TeamCheck = Value
+	end,
+})
+
+RageBotGroupBox:AddSlider("RageBotTeleportDistance", {
+	Text = "Distance téléportation",
+	Default = 10,
+	Min = 1,
+	Max = 50,
+	Rounding = 0,
+	Callback = function(Value)
+		RageBotConfig.TeleportDistance = Value
+	end,
+})
+
+RageBotGroupBox:AddSlider("RageBotMinHealth", {
+	Text = "Santé minimale cible",
+	Default = 1,
+	Min = 1,
+	Max = 150,
+	Rounding = 0,
+	Callback = function(Value)
+		RageBotConfig.MinHealth = Value
+	end,
+})
+
+RageBotGroupBox:AddSlider("RageBotRotationSpeed", {
+	Text = "Vitesse de rotation (°/s)",
+	Default = 180,
+	Min = 0,
+	Max = 720,
+	Rounding = 0,
+	Callback = function(Value)
+		RageBotConfig.RotationSpeed = Value
+	end,
+})
+
+RageBotGroupBox:AddSlider("RageBotRotationRadius", {
+	Text = "Rayon de rotation",
+	Default = 3,
+	Min = 0,
+	Max = 10,
+	Rounding = 1,
+	Callback = function(Value)
+		RageBotConfig.RotationRadius = Value
+	end,
+})
+
+-- ==========================
+-- SHOTGUN RAGE
+-- ==========================
+local ShotgunRagePlayers = game:GetService("Players")
+local ShotgunRageLocalPlayer = ShotgunRagePlayers.LocalPlayer
+local ShotgunRageRunService = game:GetService("RunService")
+
+local ShotgunRageConfig = {
+	Enabled = false,
+	OrbitAngle = 0,
+	OrbitRadius = 5,
+	OrbitHeight = 8,
+	OrbitSpeed = 36000, -- 10000% de rotation (100x 360 degrés/seconde)
+}
+
+local ShotgunRageConnection = nil
+
+local function toggleShotgunRage(enabled)
+	ShotgunRageConfig.Enabled = enabled
+	
+	if ShotgunRageConnection then
+		ShotgunRageConnection:Disconnect()
+		ShotgunRageConnection = nil
+	end
+	
+	if enabled then
+		ShotgunRageConnection = ShotgunRageRunService.Heartbeat:Connect(function(deltaTime)
+			if not ShotgunRageConfig.Enabled then return end
+			
+			local character = ShotgunRageLocalPlayer.Character
+			if not character then return end
+			
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if not humanoid or humanoid.Health <= 0 then return end
+			
+			local rootPart = character:FindFirstChild("HumanoidRootPart")
+			if not rootPart then return end
+			
+			-- Trouver le joueur le plus proche (vivant uniquement)
+			local closestPlayer = nil
+			local closestDistance = math.huge
+			
+			for _, otherPlayer in ipairs(ShotgunRagePlayers:GetPlayers()) do
+				if otherPlayer ~= ShotgunRageLocalPlayer then
+					local otherCharacter = otherPlayer.Character
+					if otherCharacter then
+						local otherHRP = otherCharacter:FindFirstChild("HumanoidRootPart")
+						local otherHumanoid = otherCharacter:FindFirstChildOfClass("Humanoid")
+						if otherHRP and otherHumanoid and otherHumanoid.Health > 0 then
+							local distance = (otherHRP.Position - rootPart.Position).Magnitude
+							if distance < closestDistance and distance < 1000000 then
+								closestDistance = distance
+								closestPlayer = otherPlayer
+							end
+						end
+					end
+				end
+			end
+			
+			if closestPlayer then
+				local targetCharacter = closestPlayer.Character
+				if not targetCharacter then return end
+				
+				local targetHRP = targetCharacter:FindFirstChild("HumanoidRootPart")
+				if not targetHRP then return end
+				
+				local targetHead = targetCharacter:FindFirstChild("Head")
+				if not targetHead then return end
+				
+				-- Orbiter autour du joueur cible dans le ciel
+				ShotgunRageConfig.OrbitAngle = ShotgunRageConfig.OrbitAngle + (deltaTime * ShotgunRageConfig.OrbitSpeed)
+				local x = math.cos(math.rad(ShotgunRageConfig.OrbitAngle)) * ShotgunRageConfig.OrbitRadius
+				local z = math.sin(math.rad(ShotgunRageConfig.OrbitAngle)) * ShotgunRageConfig.OrbitRadius
+				
+				local orbitPosition = targetHRP.Position + Vector3.new(x, ShotgunRageConfig.OrbitHeight, z)
+				rootPart.CFrame = CFrame.new(orbitPosition, targetHRP.Position)
+				
+				-- Lock caméra sur la tête de la cible
+				local camera = workspace.CurrentCamera
+				if camera then
+					local fixedCameraPos = targetHRP.Position + Vector3.new(0, 2, 4)
+					camera.CFrame = CFrame.new(fixedCameraPos, targetHead.Position)
+				end
+			end
+		end)
+	end
+end
+
+-- Interface Shotgun Rage
+ShotgunRageGroupBox:AddToggle("ShotgunRageEnabled", {
+	Text = "Activer Shotgun Rage",
+	Default = false,
+	Callback = function(Value)
+		toggleShotgunRage(Value)
+	end,
+})
+
+ShotgunRageGroupBox:AddLabel("Keybind Shotgun Rage"):AddKeyPicker("ShotgunRageKeybind", {
+	Default = "None",
+	Mode = "Toggle",
+	Text = "Keybind Shotgun Rage",
+	Callback = function()
+		local currentState = Toggles.ShotgunRageEnabled.Value
+		Toggles.ShotgunRageEnabled:SetValue(not currentState)
+		
+		if not currentState then
+			toggleShotgunRage(true)
+		else
+			toggleShotgunRage(false)
+		end
+	end,
+})
+
+ShotgunRageGroupBox:AddSlider("ShotgunRageOrbitRadius", {
+	Text = "Rayon d'orbite",
+	Default = 5,
+	Min = 2,
+	Max = 15,
+	Rounding = 0,
+	Callback = function(Value)
+		ShotgunRageConfig.OrbitRadius = Value
+	end,
+})
+
+ShotgunRageGroupBox:AddSlider("ShotgunRageOrbitHeight", {
+	Text = "Hauteur d'orbite",
+	Default = 8,
+	Min = 2,
+	Max = 20,
+	Rounding = 0,
+	Callback = function(Value)
+		ShotgunRageConfig.OrbitHeight = Value
+	end,
+})
+
+ShotgunRageGroupBox:AddSlider("ShotgunRageOrbitSpeed", {
+	Text = "Vitesse d'orbite",
+	Default = 36000,
+	Min = 1000,
+	Max = 72000,
+	Rounding = 0,
+	Callback = function(Value)
+		ShotgunRageConfig.OrbitSpeed = Value
+	end,
+})
+--camera desync
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+
+local CameraConnection
+
+local Config = {
+    Enabled = false,
+    SavedCFrame = nil,
+    SavedType = nil,
+    SavedSubject = nil,
+}
+
+local function ToggleCamera(State)
+    Config.Enabled = State
+
+    if CameraConnection then
+        CameraConnection:Disconnect()
+        CameraConnection = nil
+    end
+
+    if State then
+        Config.SavedCFrame = Camera.CFrame
+        Config.SavedType = Camera.CameraType
+        Config.SavedSubject = Camera.CameraSubject
+
+        Camera.CameraType = Enum.CameraType.Scriptable
+
+        CameraConnection = RunService.RenderStepped:Connect(function()
+            Camera.CFrame = Config.SavedCFrame
+        end)
+    else
+        Camera.CameraType = Config.SavedType or Enum.CameraType.Custom
+        Camera.CameraSubject = Config.SavedSubject
+    end
+end
+
+
+ShotgunRageGroupBox:AddToggle("FreezeCamera", {
+    Text = "Freeze Camera",
+    Default = false,
+    Callback = function(Value)
+        ToggleCamera(Value)
+    end,
+})
+
+ShotgunRageGroupBox:AddLabel("Keybind"):AddKeyPicker("FreezeCameraKeybind", {
+    Default = "None",
+    Mode = "Toggle",
+    Text = "Freeze Camera",
+
+    Callback = function()
+        Toggles.FreezeCamera:SetValue(not Toggles.FreezeCamera.Value)
+    end,
+})
+
+--=======================================================================================================================================================
+--CECI EST LES ECRITURE DU FOV VOILA J'AI RIEN D'AUTRE A DIRE
+--=======================================================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+MainRightGroupBox:AddToggle("MainExample", {
+	Text = "Silent Lock",
+	Default = false,
+	Callback = function(Value)
+		--[[
+	WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
+]]
+
+-- We update scripts everyday make sure to join
+-- Join the discord https://discord.gg/9RPtJvHVGz
+local plrs = game:GetService("Players")
+local rs = game:GetService("RunService")
+local uis = game:GetService("UserInputService")
+local lp = plrs.LocalPlayer
+local cam = workspace.CurrentCamera
+
+
+-- config
+getgenv().Aimbot = true
+getgenv().Smoothness = 1.5
+getgenv().FOV = 200
+
+
+-- fov circle setup
+local circle = Drawing.new("Circle")
+circle.Thickness = 1
+circle.Visible = true
+circle.Color = Color3.fromRGB(255, 50, 50)
+circle.Transparency = 0.5
+
+
+local function get_target()
+    local target = nil
+    local dist = getgenv().FOV
+    local mouse = uis:GetMouseLocation()
+
+
+    for _, v in pairs(plrs:GetPlayers()) do
+        -- make sure they aren't us and they are actually alive
+        if v ~= lp and v.Character and v.Character:FindFirstChild("Humanoid") and v.Character.Humanoid.Health > 0 then
+            
+            -- check for head hitboxes first, then normal head
+            local part = v.Character:FindFirstChild("HeadHB") or v.Character:FindFirstChild("Head") or v.Character:FindFirstChild("UpperTorso")
+            
+            if part then
+                local pos, on_screen = cam:WorldToViewportPoint(part.Position)
+                
+                if on_screen then
+                    local mag = (Vector2.new(pos.X, pos.Y) - mouse).Magnitude
+                    
+                    if mag < dist then
+                        dist = mag
+                        target = part
+                    end
+                end
+            end
+        end
+    end
+    return target
+end
+
+
+-- main loop
+rs.RenderStepped:Connect(function()
+    circle.Visible = getgenv().Aimbot
+    circle.Radius = getgenv().FOV
+    circle.Position = uis:GetMouseLocation()
+
+
+    -- checking for right click hold
+    if uis:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) and getgenv().Aimbot then -- change MouseButton2 to anything else if you don't want to lock with holding right click
+        local target = get_target()
+        
+        if target then
+            local pos, _ = cam:WorldToViewportPoint(target.Position)
+            local mouse_loc = uis:GetMouseLocation()
+            
+            -- calculate relative movement
+            local x = (pos.X - mouse_loc.X) * getgenv().Smoothness
+            local y = (pos.Y - mouse_loc.Y) * getgenv().Smoothness
+            
+            -- move mouse
+            if mousemoverel then
+                mousemoverel(x, y)
+            end
+        end
+    end
+end)
+
+
+-- Made by Dmonds tweaked by InterGalactic
+
+	end,
+})
+
+
+
+
+
+
+-- Sets the draggable label visibility
+local DraggableLabel = Library:AddDraggableLabel("Rift Counter")
+DraggableLabel:SetVisible(true)
+
+-- Example of dynamically-updating draggable label with common traits (fps and ping)
+local FrameTimer = tick()
+local FrameCounter = 0;
+local FPS = 240;
+
+local WatermarkConnection = game:GetService('RunService').RenderStepped:Connect(function()
+    FrameCounter += 1;
+
+    if (tick() - FrameTimer) >= 1 then
+        FPS = FrameCounter;
+        FrameTimer = tick();
+        FrameCounter = 0;
+    end;
+
+    DraggableLabel:SetText(('Rift Counter | %s fps | %s ms'):format(
+        math.floor(FPS),
+        math.floor(game:GetService('Stats').Network.ServerStatsItem['Data Ping']:GetValue()) -- Use LocalPlayer:GetNetworkPing() inside Studio
+    ));
+end);
+
+
+
+
+
+
+
+
+-- ==========================
+-- RAGE
+-- ==========================
+local RageGroupBox = Tabs.Rage:AddLeftGroupbox("Triggerbot", "crosshair")
+
+local SilentAimGroupBox = Tabs.Rage:AddLeftGroupbox("Silent Aim", "crosshair")
+
+-- ==========================
+-- TRIGGERBOT
+-- ==========================
+
+
+-- Interface Triggerbot
+RageGroupBox:AddToggle("TriggerbotEnabled", {
+	Text = "Activer Triggerbot",
+	Default = false,
+	Callback = function(Value)
+		if Value then
+			-- Settings
+			local HoldClick = true
+			local Hotkey = 't' -- Leave blank for always on
+			local HotkeyToggle = true -- True if you want it to toggle on and off with a click
+
+			local Players = game:GetService('Players')
+			local RunService = game:GetService('RunService')
+
+			local LocalPlayer = Players.LocalPlayer
+			local Mouse = LocalPlayer:GetMouse()
+
+			local Toggle = (Hotkey ~= '')
+			local CurrentlyPressed = false
+
+			Mouse.KeyDown:Connect(function(key)
+				if HotkeyToggle == true and key == Hotkey then
+					Toggle = not Toggle
+				elseif 
+					key == Hotkey then
+					Toggle = true
+				end
+			end)
+
+			Mouse.KeyUp:Connect(function(key)
+				if HotkeyToggle ~= true and key == Hotkey then
+					Toggle = false
+				end
+			end)
+
+			RunService.RenderStepped:Connect(function()
+				if Toggle then
+					if Mouse.Target then
+						if Mouse.Target.Parent:FindFirstChild('Humanoid') then
+							if HoldClick then
+								if not CurrentlyPressed then
+									CurrentlyPressed = true
+									mouse1press()
+								end
+							else
+								mouse1click()
+							end
+						else
+							if HoldClick then
+								CurrentlyPressed = false
+								mouse1release()
+							end
+						end
+					end
+				end
+			end)
+		else
+			task.wait("0.1")
+		end
+	end,
+})
+
+
+-- ==========================
+-- SILENT AIM
+-- ==========================
+local SilentAimPlayers = game:GetService("Players")
+local SilentAimLocalPlayer = SilentAimPlayers.LocalPlayer
+local SilentAimRunService = game:GetService("RunService")
+local SilentAimUserInputService = game:GetService("UserInputService")
+local SilentAimCamera = workspace.CurrentCamera
+
+local SilentAimConfig = {
+	Enabled = false,
+	FOV = 200,
+	Smoothness = 1.5,
+	TargetPart = "Head",
+	TeamCheck = true,
+	MinHealth = 1,
+	ShowFOV = true,
+}
+
+local SilentAimConnection = nil
+local SilentAimTarget = nil
+local SilentAimCircle = Drawing.new("Circle")
+SilentAimCircle.Thickness = 1
+SilentAimCircle.Visible = false
+SilentAimCircle.Color = Color3.fromRGB(255, 50, 50)
+SilentAimCircle.Transparency = 0.5
+SilentAimCircle.Filled = false
+
+local function GetSilentAimTarget()
+	local target = nil
+	local closestDistance = SilentAimConfig.FOV
+	local mousePos = SilentAimUserInputService:GetMouseLocation()
+	
+	for _, player in pairs(SilentAimPlayers:GetPlayers()) do
+		if player == SilentAimLocalPlayer then continue end
+		
+		local targetCharacter = player.Character
+		if not targetCharacter then continue end
+		
+		local humanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+		if not humanoid or humanoid.Health <= 0 then continue end
+		
+		-- Health check
+		if humanoid.Health < SilentAimConfig.MinHealth then continue end
+		
+		-- Team check
+		if SilentAimConfig.TeamCheck then
+			if player.Team and SilentAimLocalPlayer.Team and player.Team == SilentAimLocalPlayer.Team then
+				continue
+			end
+		end
+		
+		-- Chercher la partie ciblée (HeadHB si disponible, sinon Head, puis HumanoidRootPart)
+		local targetPart = targetCharacter:FindFirstChild("HeadHB") or 
+		                  targetCharacter:FindFirstChild(SilentAimConfig.TargetPart) or 
+		                  targetCharacter:FindFirstChild("Head") or 
+		                  targetCharacter:FindFirstChild("HumanoidRootPart")
+		
+		if not targetPart then continue end
+		
+		local pos, onScreen = SilentAimCamera:WorldToViewportPoint(targetPart.Position)
+		if not onScreen then continue end
+		
+		local distance = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
+		
+		if distance < closestDistance then
+			closestDistance = distance
+			target = targetPart
+		end
+	end
+	
+	return target
+end
+
+local function UpdateSilentAimFOV()
+	if SilentAimConfig.ShowFOV then
+		SilentAimCircle.Visible = SilentAimConfig.Enabled
+		SilentAimCircle.Radius = SilentAimConfig.FOV
+		SilentAimCircle.Position = SilentAimUserInputService:GetMouseLocation()
+	else
+		SilentAimCircle.Visible = false
+	end
+end
+
+local function SilentAimCycle()
+	if not SilentAimConfig.Enabled then return end
+	
+	SilentAimTarget = GetSilentAimTarget()
+	UpdateSilentAimFOV()
+end
+
+local function EnableSilentAim()
+	SilentAimConfig.Enabled = true
+	
+	if SilentAimConnection then
+		SilentAimConnection:Disconnect()
+	end
+	
+	SilentAimConnection = SilentAimRunService.RenderStepped:Connect(function()
+		local ok, err = pcall(SilentAimCycle)
+		if not ok then
+			warn("[SilentAim] Erreur: " .. tostring(err))
+		end
+	end)
+	
+	HookSilentAim()
+end
+
+local function DisableSilentAim()
+	SilentAimConfig.Enabled = false
+	SilentAimTarget = nil
+	SilentAimCircle.Visible = false
+	
+	if SilentAimConnection then
+		SilentAimConnection:Disconnect()
+		SilentAimConnection = nil
+	end
+end
+
+-- Hook pour la redirection des tirs (silent aim)
+local SilentAimMouseMoveConnection = nil
+
+local function HookSilentAim()
+	if SilentAimMouseMoveConnection then return end
+	
+	-- Utiliser mousemoverel pour rediriger silencieusement les tirs
+	SilentAimMouseMoveConnection = SilentAimRunService.RenderStepped:Connect(function()
+		if SilentAimConfig.Enabled and SilentAimTarget then
+			local pos, _ = SilentAimCamera:WorldToViewportPoint(SilentAimTarget.Position)
+			local mousePos = SilentAimUserInputService:GetMouseLocation()
+			
+			-- Calculer le mouvement relatif
+			local x = (pos.X - mousePos.X) * SilentAimConfig.Smoothness
+			local y = (pos.Y - mousePos.Y) * SilentAimConfig.Smoothness
+			
+			-- Rediriger la souris silencieusement
+			if mousemoverel then
+				mousemoverel(x, y)
+			end
+		end
+	end)
+end
+
+local function UnhookSilentAim()
+	if SilentAimMouseMoveConnection then
+		SilentAimMouseMoveConnection:Disconnect()
+		SilentAimMouseMoveConnection = nil
+	end
+end
+
+-- Interface Silent Aim
+SilentAimGroupBox:AddToggle("SilentAimEnabled", {
+	Text = "Activer Silent Aim",
+	Default = false,
+	Callback = function(Value)
+		if Value then
+			EnableSilentAim()
+		else
+			DisableSilentAim()
+			UnhookSilentAim()
+		end
+	end,
+})
+
+SilentAimGroupBox:AddLabel("Keybind Silent Aim"):AddKeyPicker("SilentAimKeybind", {
+	Default = "None",
+	Mode = "Toggle",
+	Text = "Keybind Silent Aim",
+	Callback = function()
+		local currentState = Toggles.SilentAimEnabled.Value
+		Toggles.SilentAimEnabled:SetValue(not currentState)
+		
+		if not currentState then
+			EnableSilentAim()
+		else
+			DisableSilentAim()
+			UnhookSilentAim()
+		end
+	end,
+})
+
+SilentAimGroupBox:AddSlider("SilentAimFOV", {
+	Text = "FOV",
+	Default = 200,
+	Min = 50,
+	Max = 500,
+	Rounding = 0,
+	Callback = function(Value)
+		SilentAimConfig.FOV = Value
+	end,
+})
+
+SilentAimGroupBox:AddSlider("SilentAimSmoothness", {
+	Text = "Smoothness",
+	Default = 1.5,
+	Min = 0.1,
+	Max = 5,
+	Rounding = 1,
+	Callback = function(Value)
+		SilentAimConfig.Smoothness = Value
+	end,
+})
+
+SilentAimGroupBox:AddDropdown("SilentAimTargetPart", {
+	Values = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso"},
+	Default = "Head",
+	Text = "Partie ciblée",
+	Callback = function(Value)
+		SilentAimConfig.TargetPart = Value
+	end,
+})
+
+SilentAimGroupBox:AddToggle("SilentAimTeamCheck", {
+	Text = "Team Check",
+	Default = true,
+	Callback = function(Value)
+		SilentAimConfig.TeamCheck = Value
+	end,
+})
+
+SilentAimGroupBox:AddSlider("SilentAimMinHealth", {
+	Text = "Santé minimale cible",
+	Default = 1,
+	Min = 1,
+	Max = 150,
+	Rounding = 0,
+	Callback = function(Value)
+		SilentAimConfig.MinHealth = Value
+	end,
+})
+
+SilentAimGroupBox:AddToggle("SilentAimShowFOV", {
+	Text = "Afficher FOV",
+	Default = true,
+	Callback = function(Value)
+		SilentAimConfig.ShowFOV = Value
+	end,
+})
+
+
+
+
+
+
+
+
+-- ==========================
+-- VOIDSPAM
+-- ==========================
+-- Comportement caractérisé par une alternance très rapide entre des apparitions
+-- au contact d'un adversaire et des déplacements vers le vide situé sous la carte.
+-- Cycle : Cible → Approche → Engagement → Retrait vers le vide → Retour → Répétition
+
+local VoidSpamGroupBox = Tabs.Rage:AddRightGroupbox("VoidSpam", "crosshair")
+
+local GroundSpamGroupBox = Tabs.Rage:AddRightGroupbox("Ground Spam", "crosshair")
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+
+local VoidSpamEnabled = false
+local VoidSpamConnection = nil
+local VoidSpamConfig = {
+	ApproachDistance = 5,
+	EngagementTime = 0.15,
+	VoidWaitTime = 12, -- Temps d'attente dans le void entre les tentatives (secondes)
+	VoidDepth = -5000, -- Profondeur beaucoup plus importante
+	TargetPart = "HumanoidRootPart",
+	VoidTeleportRate = 60, -- Téléportations par seconde dans le void
+	VoidTeleportRange = 10000, -- Distance beaucoup plus grande pour sortir des limites de map
+	TeamCheck = true, -- Vérifier si la cible est dans une équipe différente
+	MinHealth = 1, -- Santé minimale de la cible pour être valide
+	WalkSpeed = 100000, -- Vitesse de déplacement pendant le VoidSpam
+	ServerSyncDelay = 0.016, -- Délai pour synchronisation serveur (environ 60 FPS)
+	ForceSync = true, -- Forcer la synchronisation serveur
+	OriginalCameraType = nil, -- Sauvegarder le CameraType original
+	OriginalCameraCFrame = nil, -- Sauvegarder la position originale de la caméra
+}
+
+local VoidSpamCurrentPhase = "idle" -- idle, target, approach, engage, void_wait, return
+local VoidSpamTarget = nil
+local VoidSpamTimer = 0
+local VoidSpamLastPosition = nil
+local VoidSpamLastTeleportTime = 0
+local VoidSpamCycleCount = 0
+local VoidSpamClickSimulated = nil
+local VoidSpamOriginalWalkSpeed = nil
+
+-- Indicateur d'état en bas de l'écran
+local VoidSpamStatusText = Drawing.new("Text")
+VoidSpamStatusText.Visible = false
+VoidSpamStatusText.Text = "VoidSpam: Inactif"
+VoidSpamStatusText.Size = 30
+VoidSpamStatusText.Color = Color3.fromRGB(255, 255, 255)
+VoidSpamStatusText.Outline = true
+VoidSpamStatusText.OutlineColor = Color3.fromRGB(0, 0, 0)
+VoidSpamStatusText.Center = true
+VoidSpamStatusText.Position = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y - 30)
+
+-- Mettre à jour la position quand la taille de l'écran change
+workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+	VoidSpamStatusText.Position = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y - 30)
+end)
+
+-- Fonction pour forcer la synchronisation serveur
+local function ForceServerSync(character, targetPosition)
+	if not character then return end
+	
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return end
+	
+	-- Technique Shotgun Rage : CFrame.new(position, lookAt)
+	if VoidSpamConfig.ForceSync then
+		if targetPosition then
+			humanoidRootPart.CFrame = CFrame.new(targetPosition, targetPosition + Vector3.new(0, 10, 0))
+		end
+		
+		-- Reset basique des vélocités
+		humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+		humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+	end
+end
+
+local function GetVoidSpamTarget()
+	local target = nil
+	local closestDistance = 100000
+	local character = LocalPlayer.Character
+	
+	if not character then return nil end
+	
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return nil end
+	
+	for _, player in pairs(Players:GetPlayers()) do
+		if player == LocalPlayer then continue end
+		
+		local targetCharacter = player.Character
+		if not targetCharacter then continue end
+		
+		local humanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+		if not humanoid or humanoid.Health <= 0 then continue end
+		
+		-- Life check : vérifier que la cible a assez de santé
+		if humanoid.Health < VoidSpamConfig.MinHealth then continue end
+		
+		-- Team check : vérifier que la cible n'est pas dans la même équipe
+		if VoidSpamConfig.TeamCheck then
+			if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+				continue
+			end
+		end
+		
+		local targetPart = targetCharacter:FindFirstChild(VoidSpamConfig.TargetPart)
+		if not targetPart then
+			targetPart = targetCharacter:FindFirstChild("HumanoidRootPart")
+		end
+		if not targetPart then continue end
+		
+		local distance = (targetPart.Position - humanoidRootPart.Position).Magnitude
+		
+		if distance < closestDistance then
+			closestDistance = distance
+			target = targetPart
+		end
+	end
+	
+	return target
+end
+
+local function VoidSpamCycle()
+	if not VoidSpamEnabled then return end
+	
+	local character = LocalPlayer.Character
+	if not character then return end
+	
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return end
+	
+	local currentTime = tick()
+	
+	-- Mettre à jour l'indicateur d'état
+	local phaseText = ""
+	if VoidSpamCurrentPhase == "idle" then
+		phaseText = "Recherche cible..."
+	elseif VoidSpamCurrentPhase == "approach" then
+		phaseText = "Approche"
+	elseif VoidSpamCurrentPhase == "engage" then
+		phaseText = "Engagement"
+	elseif VoidSpamCurrentPhase == "void_wait" then
+		local timeRemaining = math.ceil(VoidSpamConfig.VoidWaitTime - (currentTime - VoidSpamTimer))
+		phaseText = "Void (" .. timeRemaining .. "s)"
+	elseif VoidSpamCurrentPhase == "return" then
+		phaseText = "Retour"
+	end
+	
+	VoidSpamStatusText.Text = "VoidSpam: " .. phaseText .. " | Cycles: " .. VoidSpamCycleCount
+	
+	-- Phase 1: Acquisition d'une cible
+	if VoidSpamCurrentPhase == "idle" then
+		VoidSpamTarget = GetVoidSpamTarget()
+		VoidSpamClickSimulated = nil
+		
+		if VoidSpamTarget then
+			VoidSpamCurrentPhase = "approach"
+			VoidSpamTimer = currentTime
+			VoidSpamCycleCount = 0
+		end
+	
+	-- Phase 2: Approche rapide
+	elseif VoidSpamCurrentPhase == "approach" then
+		if VoidSpamTarget and VoidSpamTarget.Parent then
+			local targetPosition = VoidSpamTarget.Position
+			local approachPosition = targetPosition + Vector3.new(
+				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance),
+				10, -- Téléporter au-dessus de la cible
+				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance)
+			)
+			
+			-- Technique Shotgun Rage : CFrame.new(position, lookAt)
+			humanoidRootPart.CFrame = CFrame.new(approachPosition, targetPosition)
+			
+			VoidSpamCurrentPhase = "engage"
+			VoidSpamTimer = currentTime
+			VoidSpamClickSimulated = nil
+		else
+			VoidSpamCurrentPhase = "idle"
+			VoidSpamClickSimulated = nil
+		end
+	
+	-- Phase 3: Interaction offensive (engagement bref avec clic)
+	elseif VoidSpamCurrentPhase == "engage" then
+		-- Se téléporter au-dessus de la cible pendant l'engagement
+		if VoidSpamTarget and VoidSpamTarget.Parent then
+			local targetPosition = VoidSpamTarget.Position
+			local engagePosition = targetPosition + Vector3.new(
+				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance),
+				10, -- Au-dessus de la cible pendant l'engagement
+				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance)
+			)
+			
+			-- Technique Shotgun Rage : CFrame.new(position, lookAt)
+			humanoidRootPart.CFrame = CFrame.new(engagePosition, targetPosition)
+		end
+		
+		-- Simuler un clic au début de l'engagement
+		if VoidSpamClickSimulated == nil then
+			if mouse1click then
+				mouse1click()
+			end
+			VoidSpamClickSimulated = true
+		end
+		
+		if currentTime - VoidSpamTimer >= VoidSpamConfig.EngagementTime then
+			VoidSpamLastPosition = humanoidRootPart.Position
+			VoidSpamCurrentPhase = "void_wait"
+			VoidSpamTimer = currentTime
+			VoidSpamLastTeleportTime = currentTime
+			VoidSpamClickSimulated = nil
+		end
+	
+	-- Phase 4: Attente dans le void (12 secondes avec téléportations ultra-rapides)
+	elseif VoidSpamCurrentPhase == "void_wait" then
+		local timeInVoid = currentTime - VoidSpamTimer
+		local teleportInterval = 1 / VoidSpamConfig.VoidTeleportRate
+		
+		-- Téléporter à des positions très éloignées les unes des autres
+		if currentTime - VoidSpamLastTeleportTime >= teleportInterval then
+			local voidPosition = Vector3.new(
+				math.random(-VoidSpamConfig.VoidTeleportRange, VoidSpamConfig.VoidTeleportRange),
+				VoidSpamConfig.VoidDepth + math.random(-2000, 2000),
+				math.random(-VoidSpamConfig.VoidTeleportRange, VoidSpamConfig.VoidTeleportRange)
+			)
+			
+			-- Technique Shotgun Rage : CFrame.new(position, lookAt)
+			humanoidRootPart.CFrame = CFrame.new(voidPosition, voidPosition + Vector3.new(0, 10, 0))
+			
+			VoidSpamLastTeleportTime = currentTime
+		end
+		
+		-- Après 12 secondes dans le void, passer au retour
+		if timeInVoid >= VoidSpamConfig.VoidWaitTime then
+			VoidSpamCurrentPhase = "return"
+			VoidSpamTimer = currentTime
+		end
+	
+	-- Phase 5: Retour vers la cible
+	elseif VoidSpamCurrentPhase == "return" then
+		if VoidSpamTarget and VoidSpamTarget.Parent then
+			local targetPosition = VoidSpamTarget.Position
+			local returnPosition = targetPosition + Vector3.new(
+				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance),
+				10, -- Retour au-dessus de la cible
+				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance)
+			)
+			
+			-- Technique Shotgun Rage : CFrame.new(position, lookAt)
+			humanoidRootPart.CFrame = CFrame.new(returnPosition, targetPosition)
+			
+			VoidSpamCycleCount = VoidSpamCycleCount + 1
+			
+			-- Répétition immédiate du cycle
+			VoidSpamCurrentPhase = "engage"
+			VoidSpamTimer = currentTime
+		else
+			VoidSpamCurrentPhase = "idle"
+		end
+	end
+end
+
+local function EnableVoidSpam()
+	VoidSpamEnabled = true
+	VoidSpamCurrentPhase = "idle"
+	VoidSpamTarget = nil
+	VoidSpamCycleCount = 0
+	
+	-- Afficher l'indicateur
+	VoidSpamStatusText.Visible = true
+	
+	-- Sauvegarder et appliquer la vitesse de déplacement
+	local character = LocalPlayer.Character
+	if character then
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			VoidSpamOriginalWalkSpeed = humanoid.WalkSpeed
+			humanoid.WalkSpeed = VoidSpamConfig.WalkSpeed
+		end
+	end
+	
+	-- Sauvegarder et désynchroniser la caméra
+	local camera = workspace.CurrentCamera
+	if camera then
+		VoidSpamConfig.OriginalCameraType = camera.CameraType
+		VoidSpamConfig.OriginalCameraCFrame = camera.CFrame
+		camera.CameraType = Enum.CameraType.Scriptable -- Mode scriptable pour contrôle total
+	end
+	
+	if VoidSpamConnection then
+		VoidSpamConnection:Disconnect()
+	end
+	
+	VoidSpamConnection = RunService.RenderStepped:Connect(function()
+		-- Mettre à jour la position de l'indicateur
+		local camera = workspace.CurrentCamera
+		if camera then
+			VoidSpamStatusText.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y - 30)
+		end
+		
+		-- Garder la caméra fixe à sa position originale
+		if camera and VoidSpamConfig.OriginalCameraCFrame then
+			camera.CFrame = VoidSpamConfig.OriginalCameraCFrame
+		end
+		
+		local ok, err = pcall(VoidSpamCycle)
+		if not ok then
+			warn("[VoidSpam] Erreur: " .. tostring(err))
+		end
+	end)
+end
+
+local function DisableVoidSpam()
+	VoidSpamEnabled = false
+	VoidSpamCurrentPhase = "idle"
+	VoidSpamTarget = nil
+	VoidSpamCycleCount = 0
+	
+	-- Cacher l'indicateur
+	VoidSpamStatusText.Visible = false
+	VoidSpamStatusText.Text = "VoidSpam: Inactif"
+	
+	-- Restaurer la vitesse de déplacement originale
+	local character = LocalPlayer.Character
+	if character then
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid and VoidSpamOriginalWalkSpeed then
+			humanoid.WalkSpeed = VoidSpamOriginalWalkSpeed
+		end
+	end
+	
+	-- Restaurer la caméra
+	local camera = workspace.CurrentCamera
+	if camera then
+		if VoidSpamConfig.OriginalCameraType then
+			camera.CameraType = VoidSpamConfig.OriginalCameraType
+		end
+	end
+	
+	if VoidSpamConnection then
+		VoidSpamConnection:Disconnect()
+		VoidSpamConnection = nil
+	end
+end
+
+-- Interface VoidSpam
+VoidSpamGroupBox:AddToggle("VoidSpamEnabled", {
+	Text = "Activer VoidSpam",
+	Default = false,
+	Callback = function(Value)
+		if Value then
+			EnableVoidSpam()
+		else
+			DisableVoidSpam()
+		end
+	end,
+})
+
+VoidSpamGroupBox:AddLabel("Keybind VoidSpam"):AddKeyPicker("VoidSpamKeybind", {
+	Default = "None",
+	Mode = "Toggle",
+	Text = "Keybind VoidSpam",
+	Callback = function()
+		-- Inverser l'état actuel du toggle
+		local currentState = Toggles.VoidSpamEnabled.Value
+		Toggles.VoidSpamEnabled:SetValue(not currentState)
+		
+		if not currentState then
+			EnableVoidSpam()
+		else
+			DisableVoidSpam()
+		end
+	end,
+})
+
+VoidSpamGroupBox:AddSlider("VoidSpamApproachDistance", {
+	Text = "Distance d'approche",
+	Default = 5,
+	Min = 1,
+	Max = 15,
+	Rounding = 0,
+	Callback = function(Value)
+		VoidSpamConfig.ApproachDistance = Value
+	end,
+})
+
+VoidSpamGroupBox:AddSlider("VoidSpamEngagementTime", {
+	Text = "Temps d'engagement (s)",
+	Default = 0.15,
+	Min = 0.05,
+	Max = 0.5,
+	Rounding = 2,
+	Callback = function(Value)
+		VoidSpamConfig.EngagementTime = Value
+	end,
+})
+
+VoidSpamGroupBox:AddSlider("VoidSpamVoidWaitTime", {
+	Text = "Temps d'attente vide (s)",
+	Default = 12,
+	Min = 1,
+	Max = 30,
+	Rounding = 0,
+	Callback = function(Value)
+		VoidSpamConfig.VoidWaitTime = Value
+	end,
+})
+
+VoidSpamGroupBox:AddSlider("VoidSpamVoidDepth", {
+	Text = "Profondeur du vide",
+	Default = 500,
+	Min = 100,
+	Max = 10000,
+	Rounding = 0,
+	Callback = function(Value)
+		VoidSpamConfig.VoidDepth = -Value
+	end,
+})
+
+VoidSpamGroupBox:AddSlider("VoidSpamTeleportRate", {
+	Text = "Taux téléportation (pos/s)",
+	Default = 58,
+	Min = 10,
+	Max = 120,
+	Rounding = 0,
+	Callback = function(Value)
+		VoidSpamConfig.VoidTeleportRate = Value
+	end,
+})
+
+VoidSpamGroupBox:AddSlider("VoidSpamTeleportRange", {
+	Text = "Portée téléportation",
+	Default = 1000,
+	Min = 100,
+	Max = 500000,
+	Rounding = 0,
+	Callback = function(Value)
+		VoidSpamConfig.VoidTeleportRange = Value
+	end,
+})
+
+VoidSpamGroupBox:AddDropdown("VoidSpamTargetPart", {
+	Values = {"HumanoidRootPart", "Head", "UpperTorso", "LowerTorso"},
+	Default = "HumanoidRootPart",
+	Text = "Partie ciblée",
+	Callback = function(Value)
+		VoidSpamConfig.TargetPart = Value
+	end,
+})
+
+VoidSpamGroupBox:AddToggle("VoidSpamTeamCheck", {
+	Text = "Team Check",
+	Default = true,
+	Callback = function(Value)
+		VoidSpamConfig.TeamCheck = Value
+	end,
+})
+
+VoidSpamGroupBox:AddSlider("VoidSpamMinHealth", {
+	Text = "Santé minimale cible",
+	Default = 1,
+	Min = 1,
+	Max = 150,
+	Rounding = 0,
+	Callback = function(Value)
+		VoidSpamConfig.MinHealth = Value
+	end,
+})
+
+VoidSpamGroupBox:AddSlider("VoidSpamWalkSpeed", {
+	Text = "Vitesse de déplacement",
+	Default = 16,
+	Min = 1,
+	Max = 1000,
+	Rounding = 0,
+	Callback = function(Value)
+		VoidSpamConfig.WalkSpeed = Value
+		-- Appliquer immédiatement si VoidSpam est actif
+		if VoidSpamEnabled then
+			local character = LocalPlayer.Character
+			if character then
+				local humanoid = character:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					humanoid.WalkSpeed = Value
+				end
+			end
+		end
+	end,
+})
+
+VoidSpamGroupBox:AddDivider()
+
+VoidSpamGroupBox:AddToggle("VoidSpamForceSync", {
+	Text = "Forcer synchro serveur",
+	Default = true,
+	Callback = function(Value)
+		VoidSpamConfig.ForceSync = Value
+	end,
+})
+
+VoidSpamGroupBox:AddSlider("VoidSpamServerSyncDelay", {
+	Text = "Délai synchro serveur (s)",
+	Default = 0.016,
+	Min = 0.001,
+	Max = 0.1,
+	Rounding = 3,
+	Callback = function(Value)
+		VoidSpamConfig.ServerSyncDelay = Value
+	end,
+})
+
+
+-- ==========================
+-- GROUND SPAM
+-- ==========================
+local GroundSpamPlayers = game:GetService("Players")
+local GroundSpamLocalPlayer = GroundSpamPlayers.LocalPlayer
+local GroundSpamRunService = game:GetService("RunService")
+
+local GroundSpamConfig = {
+	Enabled = false,
+	Depth = 5, -- Profondeur dans le sol
+	StretchAmount = 2, -- Facteur d'allongement
+	LookAtSky = true, -- Regarder vers le ciel
+	PreventDeath = true, -- Empêcher la mort
+	ForceSync = true, -- Forcer la synchronisation serveur
+	SyncDelay = 0.016, -- Délai pour synchronisation serveur
+	Anchor = true, -- Ancrer le personnage pour éviter de tomber
+}
+
+local GroundSpamConnection = nil
+local GroundSpamOriginalTransparency = {}
+local GroundSpamOriginalSize = {}
+
+local function EnableGroundSpam()
+	GroundSpamConfig.Enabled = true
+	
+	local character = GroundSpamLocalPlayer.Character
+	if not character then return end
+	
+	-- Sauvegarder les propriétés originales des parties du corps
+	for _, part in pairs(character:GetDescendants()) do
+		if part:IsA("BasePart") then
+			GroundSpamOriginalTransparency[part] = part.Transparency
+			GroundSpamOriginalSize[part] = part.Size
+		end
+	end
+	
+	if GroundSpamConnection then
+		GroundSpamConnection:Disconnect()
+	end
+	
+	GroundSpamConnection = GroundSpamRunService.RenderStepped:Connect(function()
+		if not GroundSpamConfig.Enabled then return end
+		
+		local character = GroundSpamLocalPlayer.Character
+		if not character then return end
+		
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		if not humanoidRootPart then return end
+		
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if not humanoid then return end
+		
+		-- Noclip : désactiver les collisions
+		for _, part in pairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+			end
+		end
+		
+		-- Ancrer le personnage pour éviter de tomber
+		if GroundSpamConfig.Anchor then
+			humanoidRootPart.Anchored = true
+		end
+		
+		-- Téléporter dans le sol
+		local rayParams = RaycastParams.new()
+		rayParams.FilterType = Enum.RaycastFilterType.Exclude
+		rayParams.FilterDescendantsInstances = {character}
+		
+		local rayResult = workspace:Raycast(humanoidRootPart.Position, Vector3.new(0, -100, 0), rayParams)
+		local groundPosition = humanoidRootPart.Position
+		
+		if rayResult then
+			groundPosition = rayResult.Position - Vector3.new(0, GroundSpamConfig.Depth, 0)
+		else
+			groundPosition = humanoidRootPart.Position - Vector3.new(0, GroundSpamConfig.Depth, 0)
+		end
+		
+		humanoidRootPart.CFrame = CFrame.new(groundPosition)
+		
+		-- Forcer la synchronisation serveur
+		if GroundSpamConfig.ForceSync then
+			humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+			humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+		end
+		
+		-- Allonger le personnage
+		for _, part in pairs(character:GetDescendants()) do
+			if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+				local originalSize = GroundSpamOriginalSize[part]
+				if originalSize then
+					part.Size = Vector3.new(originalSize.X, originalSize.Y * GroundSpamConfig.StretchAmount, originalSize.Z)
+				end
+			end
+		end
+		
+		-- Regarder vers le ciel
+		if GroundSpamConfig.LookAtSky then
+			humanoidRootPart.CFrame = CFrame.new(humanoidRootPart.Position) * CFrame.Angles(math.rad(-90), 0, 0)
+		end
+		
+		-- Empêcher la mort
+		if GroundSpamConfig.PreventDeath then
+			humanoid.Health = math.max(humanoid.Health, 1)
+		end
+	end)
+end
+
+local function DisableGroundSpam()
+	GroundSpamConfig.Enabled = false
+	
+	local character = GroundSpamLocalPlayer.Character
+	if character then
+		-- Désancrer le personnage
+		if GroundSpamConfig.Anchor then
+			local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+			if humanoidRootPart then
+				humanoidRootPart.Anchored = false
+			end
+		end
+		
+		-- Restaurer les collisions
+		for _, part in pairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = true
+				
+				-- Restaurer la taille originale
+				if GroundSpamOriginalSize[part] then
+					part.Size = GroundSpamOriginalSize[part]
+				end
+				
+				-- Restaurer la transparence originale
+				if GroundSpamOriginalTransparency[part] then
+					part.Transparency = GroundSpamOriginalTransparency[part]
+				end
+			end
+		end
+	end
+	
+	-- Nettoyer les tables
+	GroundSpamOriginalTransparency = {}
+	GroundSpamOriginalSize = {}
+	
+	if GroundSpamConnection then
+		GroundSpamConnection:Disconnect()
+		GroundSpamConnection = nil
+	end
+end
+
+-- Interface Ground Spam
+GroundSpamGroupBox:AddToggle("GroundSpamEnabled", {
+	Text = "Activer Ground Spam",
+	Default = false,
+	Callback = function(Value)
+		if Value then
+			EnableGroundSpam()
+		else
+			DisableGroundSpam()
+		end
+	end,
+})
+
+GroundSpamGroupBox:AddLabel("Keybind Ground Spam"):AddKeyPicker("GroundSpamKeybind", {
+	Default = "None",
+	Mode = "Toggle",
+	Text = "Keybind Ground Spam",
+	Callback = function()
+		local currentState = Toggles.GroundSpamEnabled.Value
+		Toggles.GroundSpamEnabled:SetValue(not currentState)
+		
+		if not currentState then
+			EnableGroundSpam()
+		else
+			DisableGroundSpam()
+		end
+	end,
+})
+
+GroundSpamGroupBox:AddSlider("GroundSpamDepth", {
+	Text = "Profondeur dans le sol",
+	Default = 5,
+	Min = 1,
+	Max = 20,
+	Rounding = 0,
+	Callback = function(Value)
+		GroundSpamConfig.Depth = Value
+	end,
+})
+
+GroundSpamGroupBox:AddSlider("GroundSpamStretchAmount", {
+	Text = "Facteur d'allongement",
+	Default = 2,
+	Min = 1,
+	Max = 5,
+	Rounding = 1,
+	Callback = function(Value)
+		GroundSpamConfig.StretchAmount = Value
+	end,
+})
+
+GroundSpamGroupBox:AddToggle("GroundSpamLookAtSky", {
+	Text = "Regarder vers le ciel",
+	Default = true,
+	Callback = function(Value)
+		GroundSpamConfig.LookAtSky = Value
+	end,
+})
+
+GroundSpamGroupBox:AddToggle("GroundSpamPreventDeath", {
+	Text = "Empêcher la mort",
+	Default = true,
+	Callback = function(Value)
+		GroundSpamConfig.PreventDeath = Value
+	end,
+})
+
+GroundSpamGroupBox:AddToggle("GroundSpamAnchor", {
+	Text = "Ancrer (éviter chute)",
+	Default = true,
+	Callback = function(Value)
+		GroundSpamConfig.Anchor = Value
+	end,
+})
+
+GroundSpamGroupBox:AddDivider()
+
+GroundSpamGroupBox:AddToggle("GroundSpamForceSync", {
+	Text = "Forcer synchro serveur",
+	Default = true,
+	Callback = function(Value)
+		GroundSpamConfig.ForceSync = Value
+	end,
+})
+
+GroundSpamGroupBox:AddSlider("GroundSpamSyncDelay", {
+	Text = "Délai synchro serveur (s)",
+	Default = 0.016,
+	Min = 0.001,
+	Max = 0.1,
+	Rounding = 3,
+	Callback = function(Value)
+		GroundSpamConfig.SyncDelay = Value
+	end,
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- ==========================
+-- VISUAL
+-- ==========================
+local Lighting = game:GetService("Lighting")
+
+local VisualGroupBox = Tabs.Visual:AddLeftGroupbox("World", "sun")
+
+-- ==========================
+-- MODULE Skybox isolé (IIFE) — Presets + Application
+-- ==========================
+-- IMPORTANT (fix "loadErr: exceeded limit 200" / "out of registers") :
+-- La limite de 200 registres locaux s'applique à TOUT un chunk/fonction
+-- d'un coup. Comme ton hub est un script exécuteur (un seul gros
+-- loadstring, pas de vraie hiérarchie Script/ModuleScript), on ne peut
+-- pas isoler ce bloc dans un vrai ModuleScript séparé -> à la place, on
+-- l'enferme dans une fonction anonyme AUTO-APPELÉE (IIFE) :
+--
+--     local SkyboxModule = (function() ... return {...} end)()
+--
+-- Tout ce qui est déclaré à l'intérieur (SkyboxPresets, ApplySkybox,
+-- SkyboxNames, et toutes leurs variables temporaires) vit dans le
+-- registre local de CETTE fonction, pas dans celui du script principal.
+-- Une fois la fonction terminée et son résultat renvoyé, ses registres
+-- sont libérés -> ils ne s'additionnent JAMAIS avec les variables
+-- utilisées ailleurs dans ton menu (tabs, toggles, callbacks, etc.),
+-- peu importe combien tu en as.
+--
+-- En plus de ça, chaque preset reste dans sa propre instruction séparée
+-- (SkyboxPresets["Nom"] = {...}) plutôt qu'un seul littéral géant, pour
+-- limiter aussi le pic de registres PENDANT la construction de la table.
+--
+-- Fiabilité des vraies textures (champ "Skybox") :
+--   • "Défaut" = textures natives du moteur Roblox
+--     (rbxasset://textures/sky/sky512_*.tex), compilées avec le
+--     client -> ne peuvent jamais être modérées/supprimées.
+--   • "Aube", "Crépuscule", "Nuit étoilée" = vrais IDs communautaires
+--     dont le fonctionnement a été confirmé publiquement (topic
+--     DevForum "Skybox system help", sept. 2024). Risque de modération
+--     théorique mais faible, contrairement à des IDs inventés.
+--   • Les 21 autres presets restent en Atmosphere pure (pas de vraie
+--     texture vérifiable trouvée pour ces thèmes-là).
+
+local SkyboxModule = (function()
+	local SkyboxPresets = {}
+
+	SkyboxPresets["Défaut"] = {
+		ClockTime = 14, Brightness = 2, Ambient = Color3.fromRGB(70, 70, 70), OutdoorAmbient = Color3.fromRGB(140, 140, 140),
+		ColorShiftTop = Color3.fromRGB(255, 255, 255), ColorShiftBottom = Color3.fromRGB(255, 255, 255),
+		CelestialBodiesShown = true, StarCount = 3000,
+		Atmosphere = { Density = 0.3, Offset = 0, Color = Color3.fromRGB(199, 199, 199), Decay = Color3.fromRGB(106, 112, 125), Glare = 0, Haze = 0 },
+		Skybox = {
+			Bk = "rbxasset://textures/sky/sky512_bk.tex", Dn = "rbxasset://textures/sky/sky512_dn.tex",
+			Ft = "rbxasset://textures/sky/sky512_ft.tex", Lf = "rbxasset://textures/sky/sky512_lf.tex",
+			Rt = "rbxasset://textures/sky/sky512_rt.tex", Up = "rbxasset://textures/sky/sky512_up.tex",
+		},
+	}
+
+	SkyboxPresets["Jour clair"] = {
+		ClockTime = 13, Brightness = 3, Ambient = Color3.fromRGB(120, 120, 120), OutdoorAmbient = Color3.fromRGB(180, 180, 180),
+		ColorShiftTop = Color3.fromRGB(255, 255, 255), ColorShiftBottom = Color3.fromRGB(255, 255, 255),
+		CelestialBodiesShown = true, StarCount = 3000,
+		Atmosphere = { Density = 0.2, Offset = 0, Color = Color3.fromRGB(220, 235, 255), Decay = Color3.fromRGB(92, 150, 220), Glare = 0.2, Haze = 0 },
+	}
+
+	SkyboxPresets["Nuit étoilée"] = {
+		ClockTime = 0, Brightness = 1, Ambient = Color3.fromRGB(20, 20, 35), OutdoorAmbient = Color3.fromRGB(25, 25, 45),
+		ColorShiftTop = Color3.fromRGB(20, 20, 45), ColorShiftBottom = Color3.fromRGB(10, 10, 25),
+		CelestialBodiesShown = true, StarCount = 6000,
+		Atmosphere = { Density = 0.35, Offset = 0, Color = Color3.fromRGB(30, 30, 60), Decay = Color3.fromRGB(10, 10, 25), Glare = 0, Haze = 0.5 },
+		Skybox = {
+			Bk = "rbxassetid://15536110634", Dn = "rbxassetid://15536112543",
+			Ft = "rbxassetid://15536116141", Lf = "rbxassetid://15536114370",
+			Rt = "rbxassetid://15536118762", Up = "rbxassetid://15536117282",
+			Sun = "rbxassetid://6196665106", Moon = "rbxassetid://4547507884",
+		},
+	}
+
+	SkyboxPresets["Aube"] = {
+		ClockTime = 6, Brightness = 2, Ambient = Color3.fromRGB(110, 80, 90), OutdoorAmbient = Color3.fromRGB(200, 150, 140),
+		ColorShiftTop = Color3.fromRGB(255, 190, 150), ColorShiftBottom = Color3.fromRGB(255, 140, 120),
+		CelestialBodiesShown = true, StarCount = 500,
+		Atmosphere = { Density = 0.4, Offset = 0.1, Color = Color3.fromRGB(255, 180, 140), Decay = Color3.fromRGB(150, 90, 90), Glare = 0.4, Haze = 1 },
+		Skybox = {
+			Bk = "rbxassetid://6444884337", Dn = "rbxassetid://6444884785",
+			Ft = "rbxassetid://6444884337", Lf = "rbxassetid://6444884337",
+			Rt = "rbxassetid://6444884337", Up = "rbxassetid://6412503613",
+			Sun = "rbxassetid://6196665106", Moon = "rbxassetid://4547507884",
+		},
+	}
+
+	SkyboxPresets["Crépuscule"] = {
+		ClockTime = 19, Brightness = 1.5, Ambient = Color3.fromRGB(90, 60, 80), OutdoorAmbient = Color3.fromRGB(180, 110, 100),
+		ColorShiftTop = Color3.fromRGB(255, 120, 90), ColorShiftBottom = Color3.fromRGB(200, 70, 90),
+		CelestialBodiesShown = true, StarCount = 1500,
+		Atmosphere = { Density = 0.45, Offset = 0.15, Color = Color3.fromRGB(255, 120, 90), Decay = Color3.fromRGB(120, 50, 70), Glare = 0.3, Haze = 1.2 },
+		Skybox = {
+			Bk = "rbxassetid://16136021536", Dn = "rbxassetid://16136025360",
+			Ft = "rbxassetid://16136021536", Lf = "rbxassetid://16136021536",
+			Rt = "rbxassetid://16136021536", Up = "rbxassetid://16136023362",
+			Sun = "rbxassetid://6196665106", Moon = "rbxassetid://4547507884",
+		},
+	}
+
+	SkyboxPresets["Couvert"] = {
+		ClockTime = 13, Brightness = 1.5, Ambient = Color3.fromRGB(90, 90, 95), OutdoorAmbient = Color3.fromRGB(130, 130, 135),
+		ColorShiftTop = Color3.fromRGB(180, 180, 185), ColorShiftBottom = Color3.fromRGB(160, 160, 165),
+		CelestialBodiesShown = false, StarCount = 0,
+		Atmosphere = { Density = 0.6, Offset = 0.2, Color = Color3.fromRGB(170, 170, 175), Decay = Color3.fromRGB(110, 110, 115), Glare = 0, Haze = 2 },
+	}
+
+	SkyboxPresets["Orageux"] = {
+		ClockTime = 15, Brightness = 0.8, Ambient = Color3.fromRGB(50, 50, 60), OutdoorAmbient = Color3.fromRGB(70, 70, 85),
+		ColorShiftTop = Color3.fromRGB(90, 90, 110), ColorShiftBottom = Color3.fromRGB(60, 60, 75),
+		CelestialBodiesShown = false, StarCount = 0,
+		Atmosphere = { Density = 0.8, Offset = 0.25, Color = Color3.fromRGB(80, 80, 95), Decay = Color3.fromRGB(40, 40, 55), Glare = 0, Haze = 3 },
+	}
+
+	SkyboxPresets["Désert"] = {
+		ClockTime = 12, Brightness = 3.5, Ambient = Color3.fromRGB(140, 120, 90), OutdoorAmbient = Color3.fromRGB(220, 190, 140),
+		ColorShiftTop = Color3.fromRGB(255, 235, 190), ColorShiftBottom = Color3.fromRGB(255, 220, 160),
+		CelestialBodiesShown = true, StarCount = 0,
+		Atmosphere = { Density = 0.35, Offset = 0.1, Color = Color3.fromRGB(255, 225, 170), Decay = Color3.fromRGB(190, 140, 90), Glare = 0.5, Haze = 1.5 },
+	}
+
+	SkyboxPresets["Hiver"] = {
+		ClockTime = 11, Brightness = 2, Ambient = Color3.fromRGB(150, 160, 170), OutdoorAmbient = Color3.fromRGB(210, 220, 230),
+		ColorShiftTop = Color3.fromRGB(220, 235, 255), ColorShiftBottom = Color3.fromRGB(200, 220, 255),
+		CelestialBodiesShown = true, StarCount = 0,
+		Atmosphere = { Density = 0.5, Offset = 0.1, Color = Color3.fromRGB(230, 240, 255), Decay = Color3.fromRGB(160, 180, 200), Glare = 0.2, Haze = 1.8 },
+	}
+
+	SkyboxPresets["Espace profond"] = {
+		ClockTime = 0, Brightness = 0.3, Ambient = Color3.fromRGB(5, 5, 10), OutdoorAmbient = Color3.fromRGB(5, 5, 10),
+		ColorShiftTop = Color3.fromRGB(0, 0, 0), ColorShiftBottom = Color3.fromRGB(0, 0, 0),
+		CelestialBodiesShown = true, StarCount = 8000,
+		Atmosphere = { Density = 0, Offset = 0, Color = Color3.fromRGB(0, 0, 0), Decay = Color3.fromRGB(0, 0, 0), Glare = 0, Haze = 0 },
+	}
+
+	SkyboxPresets["Toxique"] = {
+		ClockTime = 13, Brightness = 1.5, Ambient = Color3.fromRGB(40, 70, 30), OutdoorAmbient = Color3.fromRGB(90, 150, 60),
+		ColorShiftTop = Color3.fromRGB(130, 220, 60), ColorShiftBottom = Color3.fromRGB(90, 180, 40),
+		CelestialBodiesShown = false, StarCount = 0,
+		Atmosphere = { Density = 0.7, Offset = 0.2, Color = Color3.fromRGB(130, 220, 60), Decay = Color3.fromRGB(50, 90, 30), Glare = 0.1, Haze = 3 },
+	}
+
+	SkyboxPresets["Lune de sang"] = {
+		ClockTime = 0, Brightness = 0.9, Ambient = Color3.fromRGB(60, 15, 15), OutdoorAmbient = Color3.fromRGB(90, 20, 20),
+		ColorShiftTop = Color3.fromRGB(150, 20, 20), ColorShiftBottom = Color3.fromRGB(60, 10, 15),
+		CelestialBodiesShown = true, StarCount = 3000,
+		Atmosphere = { Density = 0.5, Offset = 0.1, Color = Color3.fromRGB(150, 30, 30), Decay = Color3.fromRGB(60, 10, 10), Glare = 0.3, Haze = 1.5 },
+	}
+
+	SkyboxPresets["Brumeux"] = {
+		ClockTime = 8, Brightness = 1.5, Ambient = Color3.fromRGB(140, 140, 140), OutdoorAmbient = Color3.fromRGB(190, 190, 190),
+		ColorShiftTop = Color3.fromRGB(220, 220, 220), ColorShiftBottom = Color3.fromRGB(200, 200, 200),
+		CelestialBodiesShown = false, StarCount = 0,
+		Atmosphere = { Density = 0.9, Offset = 0.3, Color = Color3.fromRGB(220, 220, 220), Decay = Color3.fromRGB(160, 160, 160), Glare = 0, Haze = 4 },
+	}
+
+	SkyboxPresets["Heure dorée"] = {
+		ClockTime = 17.5, Brightness = 2.5, Ambient = Color3.fromRGB(140, 110, 70), OutdoorAmbient = Color3.fromRGB(230, 180, 110),
+		ColorShiftTop = Color3.fromRGB(255, 200, 120), ColorShiftBottom = Color3.fromRGB(255, 170, 100),
+		CelestialBodiesShown = true, StarCount = 300,
+		Atmosphere = { Density = 0.35, Offset = 0.1, Color = Color3.fromRGB(255, 190, 110), Decay = Color3.fromRGB(150, 100, 60), Glare = 0.6, Haze = 1 },
+	}
+
+	SkyboxPresets["Minuit"] = {
+		ClockTime = 0.5, Brightness = 0.5, Ambient = Color3.fromRGB(10, 10, 20), OutdoorAmbient = Color3.fromRGB(15, 15, 25),
+		ColorShiftTop = Color3.fromRGB(10, 10, 25), ColorShiftBottom = Color3.fromRGB(5, 5, 15),
+		CelestialBodiesShown = true, StarCount = 7000,
+		Atmosphere = { Density = 0.3, Offset = 0, Color = Color3.fromRGB(15, 15, 30), Decay = Color3.fromRGB(5, 5, 15), Glare = 0, Haze = 0.3 },
+	}
+
+	SkyboxPresets["Éclipse"] = {
+		ClockTime = 12, Brightness = 0.4, Ambient = Color3.fromRGB(30, 25, 40), OutdoorAmbient = Color3.fromRGB(45, 35, 60),
+		ColorShiftTop = Color3.fromRGB(60, 40, 80), ColorShiftBottom = Color3.fromRGB(30, 20, 50),
+		CelestialBodiesShown = true, StarCount = 4000,
+		Atmosphere = { Density = 0.4, Offset = 0.1, Color = Color3.fromRGB(60, 40, 80), Decay = Color3.fromRGB(25, 15, 40), Glare = 0.2, Haze = 0.8 },
+	}
+
+	SkyboxPresets["Aurore boréale"] = {
+		ClockTime = 1, Brightness = 0.8, Ambient = Color3.fromRGB(20, 40, 40), OutdoorAmbient = Color3.fromRGB(30, 80, 70),
+		ColorShiftTop = Color3.fromRGB(60, 220, 160), ColorShiftBottom = Color3.fromRGB(30, 60, 120),
+		CelestialBodiesShown = true, StarCount = 6000,
+		Atmosphere = { Density = 0.3, Offset = 0, Color = Color3.fromRGB(60, 200, 160), Decay = Color3.fromRGB(20, 30, 60), Glare = 0.1, Haze = 0.4 },
+	}
+
+	SkyboxPresets["Volcanique"] = {
+		ClockTime = 13, Brightness = 1, Ambient = Color3.fromRGB(60, 20, 10), OutdoorAmbient = Color3.fromRGB(110, 40, 15),
+		ColorShiftTop = Color3.fromRGB(200, 60, 20), ColorShiftBottom = Color3.fromRGB(90, 25, 10),
+		CelestialBodiesShown = false, StarCount = 0,
+		Atmosphere = { Density = 0.8, Offset = 0.3, Color = Color3.fromRGB(200, 70, 20), Decay = Color3.fromRGB(60, 20, 10), Glare = 0.4, Haze = 3.5 },
+	}
+
+	SkyboxPresets["Sous-marin"] = {
+		ClockTime = 12, Brightness = 1, Ambient = Color3.fromRGB(10, 40, 60), OutdoorAmbient = Color3.fromRGB(20, 70, 100),
+		ColorShiftTop = Color3.fromRGB(20, 90, 130), ColorShiftBottom = Color3.fromRGB(10, 50, 90),
+		CelestialBodiesShown = false, StarCount = 0,
+		Atmosphere = { Density = 1, Offset = 0.4, Color = Color3.fromRGB(20, 90, 130), Decay = Color3.fromRGB(5, 30, 60), Glare = 0, Haze = 5 },
+	}
+
+	SkyboxPresets["Néon Cyberpunk"] = {
+		ClockTime = 0, Brightness = 0.7, Ambient = Color3.fromRGB(40, 10, 50), OutdoorAmbient = Color3.fromRGB(80, 20, 100),
+		ColorShiftTop = Color3.fromRGB(220, 30, 200), ColorShiftBottom = Color3.fromRGB(30, 200, 220),
+		CelestialBodiesShown = false, StarCount = 1000,
+		Atmosphere = { Density = 0.5, Offset = 0.1, Color = Color3.fromRGB(180, 30, 200), Decay = Color3.fromRGB(20, 10, 40), Glare = 0.3, Haze = 1.5 },
+	}
+
+	SkyboxPresets["Pastel Rêve"] = {
+		ClockTime = 10, Brightness = 2.5, Ambient = Color3.fromRGB(200, 180, 210), OutdoorAmbient = Color3.fromRGB(240, 210, 230),
+		ColorShiftTop = Color3.fromRGB(255, 210, 235), ColorShiftBottom = Color3.fromRGB(210, 225, 255),
+		CelestialBodiesShown = true, StarCount = 200,
+		Atmosphere = { Density = 0.4, Offset = 0.1, Color = Color3.fromRGB(255, 220, 240), Decay = Color3.fromRGB(200, 190, 220), Glare = 0.3, Haze = 1.2 },
+	}
+
+	SkyboxPresets["Automne"] = {
+		ClockTime = 15, Brightness = 2, Ambient = Color3.fromRGB(110, 80, 50), OutdoorAmbient = Color3.fromRGB(180, 130, 80),
+		ColorShiftTop = Color3.fromRGB(230, 150, 80), ColorShiftBottom = Color3.fromRGB(190, 110, 60),
+		CelestialBodiesShown = true, StarCount = 0,
+		Atmosphere = { Density = 0.4, Offset = 0.1, Color = Color3.fromRGB(220, 150, 90), Decay = Color3.fromRGB(120, 80, 50), Glare = 0.2, Haze = 1.5 },
+	}
+
+	SkyboxPresets["Apocalypse"] = {
+		ClockTime = 13, Brightness = 1, Ambient = Color3.fromRGB(70, 65, 55), OutdoorAmbient = Color3.fromRGB(120, 110, 90),
+		ColorShiftTop = Color3.fromRGB(160, 140, 100), ColorShiftBottom = Color3.fromRGB(120, 100, 70),
+		CelestialBodiesShown = false, StarCount = 0,
+		Atmosphere = { Density = 0.85, Offset = 0.3, Color = Color3.fromRGB(150, 130, 100), Decay = Color3.fromRGB(80, 70, 55), Glare = 0, Haze = 4 },
+	}
+
+	local Lighting = game:GetService("Lighting")
+
+	local function ApplySkybox(name)
+		local preset = SkyboxPresets[name]
+		if preset == nil then
+			return
+		end
+
+		local existingSky = Lighting:FindFirstChild("CustomSky_NamelessHub")
+		if existingSky then existingSky:Destroy() end
+		local existingAtmo = Lighting:FindFirstChild("CustomAtmosphere_NamelessHub")
+		if existingAtmo then existingAtmo:Destroy() end
+
+		Lighting.ClockTime = preset.ClockTime
+		Lighting.Brightness = preset.Brightness
+		Lighting.Ambient = preset.Ambient
+		Lighting.OutdoorAmbient = preset.OutdoorAmbient
+		Lighting.ColorShift_Top = preset.ColorShiftTop
+		Lighting.ColorShift_Bottom = preset.ColorShiftBottom
+
+		local sky = Instance.new("Sky")
+		sky.Name = "CustomSky_NamelessHub"
+		sky.CelestialBodiesShown = preset.CelestialBodiesShown
+		sky.StarCount = preset.StarCount
+
+		if preset.Skybox then
+			local textureProps = { "Bk", "Dn", "Ft", "Lf", "Rt", "Up" }
+			for _, face in ipairs(textureProps) do
+				local id = preset.Skybox[face]
+				if id then
+					local ok, err = pcall(function()
+						sky["Skybox" .. face] = id
+					end)
+					if not ok then
+						warn(("[Skybox] Face %s indisponible pour '%s' (asset peut-être modéré) : %s"):format(face, name, err))
+					end
+				end
+			end
+			if preset.Skybox.Sun then
+				pcall(function() sky.SunTextureId = preset.Skybox.Sun end)
+			end
+			if preset.Skybox.Moon then
+				pcall(function() sky.MoonTextureId = preset.Skybox.Moon end)
+			end
+		end
+
+		sky.Parent = Lighting
+
+		if preset.Atmosphere then
+			local atmo = Instance.new("Atmosphere")
+			atmo.Name = "CustomAtmosphere_NamelessHub"
+			atmo.Density = preset.Atmosphere.Density
+			atmo.Offset = preset.Atmosphere.Offset
+			atmo.Color = preset.Atmosphere.Color
+			atmo.Decay = preset.Atmosphere.Decay
+			atmo.Glare = preset.Atmosphere.Glare
+			atmo.Haze = preset.Atmosphere.Haze
+			atmo.Parent = Lighting
+		end
+	end
+
+	local SkyboxNames = {}
+	for name in pairs(SkyboxPresets) do
+		table.insert(SkyboxNames, name)
+	end
+	table.sort(SkyboxNames)
+
+	return {
+		Presets = SkyboxPresets,
+		Names = SkyboxNames,
+		Apply = ApplySkybox,
+	}
+end)()
+
+
+-- ==========================
+-- Branchement UI (reste dans le script principal, en dehors de l'IIFE)
+-- ==========================
+-- IMPORTANT : pas de toggle "SkyboxEnabled" séparé ici. La bibliothèque
+-- (Obsidian/Linoria) appelle le Callback immédiatement à la création pour
+-- appliquer la valeur par défaut -> si ce Callback référence un Toggle qui
+-- n'existe pas encore, ça plante et ça bloque TOUT le reste du script
+-- (Player, Config, SaveManager compris). On applique donc directement,
+-- sans dépendance vers un autre élément UI, et on protège avec pcall pour
+-- qu'une erreur ici ne puisse jamais casser la suite du menu.
+VisualGroupBox:AddDropdown("SkyboxPreset", {
+	Values = SkyboxModule.Names,
+	Default = "Défaut",
+	Text = "Skybox (" .. #SkyboxModule.Names .. " presets)",
+	Callback = function(Value)
+		local ok, err = pcall(SkyboxModule.Apply, Value)
+		if not ok then
+			warn("[Skybox] Échec application '" .. tostring(Value) .. "' : " .. tostring(err))
+			Library:Notify("Erreur skybox : " .. tostring(err), 4)
+		end
+	end,
+})
+
+VisualGroupBox:AddDivider()
+
+-- Lumière
+VisualGroupBox:AddToggle("LightingEnabled", {
+	Text = "Activer réglages lumière custom",
+	Default = false,
+	Callback = function(Value) end,
+})
+
+VisualGroupBox:AddSlider("LightBrightness", {
+	Text = "Luminosité",
+	Default = math.floor(Lighting.Brightness * 10) / 10,
+	Min = 0,
+	Max = 5,
+	Rounding = 1,
+	Compact = false,
+	Callback = function(Value)
+		if Toggles.LightingEnabled.Value then
+			Lighting.Brightness = Value
+		end
+	end,
+})
+
+VisualGroupBox:AddSlider("LightClockTime", {
+	Text = "Heure (ClockTime)",
+	Default = 14,
+	Min = 0,
+	Max = 24,
+	Rounding = 1,
+	Callback = function(Value)
+		if Toggles.LightingEnabled.Value then
+			Lighting.ClockTime = Value
+		end
+	end,
+})
+
+VisualGroupBox:AddSlider("LightAmbient", {
+	Text = "Ambient (gris 0-255)",
+	Default = 100,
+	Min = 0,
+	Max = 255,
+	Rounding = 0,
+	Callback = function(Value)
+		if Toggles.LightingEnabled.Value then
+			Lighting.Ambient = Color3.fromRGB(Value, Value, Value)
+			Lighting.OutdoorAmbient = Color3.fromRGB(Value, Value, Value)
+		end
+	end,
+})
+
+VisualGroupBox:AddSlider("LightColorShift", {
+	Text = "Teinte lumière (ColorShift_Top R)",
+	Default = 0,
+	Min = 0,
+	Max = 255,
+	Rounding = 0,
+	Callback = function(Value)
+		if Toggles.LightingEnabled.Value then
+			Lighting.ColorShift_Top = Color3.fromRGB(Value, Value, Value)
+		end
+	end,
+})
+
+VisualGroupBox:AddDivider()
+
+-- FOV personnalisé : ne fonctionne que dans les jeux qui laissent le FOV
+-- de la caméra libre. Dans un jeu qui verrouille/réécrit le FOV chaque
+-- frame, ça n'aura aucun effet (et c'est voulu : pas de contournement
+-- d'un verrou volontaire du jeu, juste un réglage simple sur
+-- workspace.CurrentCamera.FieldOfView).
+local function ApplyCustomFOV()
+	local cam = workspace.CurrentCamera
+	if cam and Options.CustomFOVValue then
+		cam.FieldOfView = Options.CustomFOVValue.Value
+	end
+end
+
+VisualGroupBox:AddToggle("CustomFOVEnabled", {
+	Text = "FOV personnalisé",
+	Default = false,
+	Callback = function(Value)
+		local cam = workspace.CurrentCamera
+		if Value then
+			ApplyCustomFOV()
+		elseif cam then
+			cam.FieldOfView = 70 -- valeur par défaut Roblox
+		end
+	end,
+})
+
+VisualGroupBox:AddSlider("CustomFOVValue", {
+	Text = "Valeur FOV",
+	Default = 70,
+	Min = 30,
+	Max = 120,
+	Rounding = 0,
+	Callback = function(Value)
+		if Toggles.CustomFOVEnabled and Toggles.CustomFOVEnabled.Value then
+			local cam = workspace.CurrentCamera
+			if cam then
+				cam.FieldOfView = Value
+			end
+		end
+	end,
+})
+
+-- Réapplique si la caméra change (respawn, véhicule, etc.)
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+	if Toggles.CustomFOVEnabled and Toggles.CustomFOVEnabled.Value then
+		task.wait()
+		ApplyCustomFOV()
+	end
+end)
+
+local VisualRightGroupBox = Tabs.Visual:AddRightGroupbox("Fog", "cloud")
+
+-- Fog
+VisualRightGroupBox:AddToggle("FogEnabled", {
+	Text = "Activer fog custom",
+	Default = false,
+	Callback = function(Value)
+		if not Value then
+			-- reset à des valeurs neutres quand désactivé
+			Lighting.FogStart = 0
+			Lighting.FogEnd = 100000
+		end
+	end,
+})
+
+VisualRightGroupBox:AddSlider("FogStart", {
+	Text = "Fog Start",
+	Default = 0,
+	Min = 0,
+	Max = 1000,
+	Rounding = 0,
+	Callback = function(Value)
+		if Toggles.FogEnabled.Value then
+			Lighting.FogStart = Value
+		end
+	end,
+})
+
+VisualRightGroupBox:AddSlider("FogEnd", {
+	Text = "Fog End",
+	Default = 1000,
+	Min = 50,
+	Max = 5000,
+	Rounding = 0,
+	Callback = function(Value)
+		if Toggles.FogEnabled.Value then
+			Lighting.FogEnd = Value
+		end
+	end,
+})
+
+VisualRightGroupBox:AddLabel("Couleur du fog"):AddColorPicker("FogColor", {
+	Default = Color3.fromRGB(150, 150, 150),
+	Title = "Couleur du fog",
+	Callback = function(Value)
+		if Toggles.FogEnabled.Value then
+			Lighting.FogColor = Value
+		end
+	end,
+})
+
+-- ==========================
+-- MÉTÉO (particules ambiantes 3D : pluie, neige, etc.)
+-- ==========================
+-- Technique : un Part invisible ancré, repositionné chaque frame au-dessus
+-- de la caméra, qui porte le ParticleEmitter. Comme ça les particules
+-- tombent tout autour du joueur où qu'il regarde/se déplace, de façon
+-- réaliste, sans dépendre d'aucun asset externe (juste des ParticleEmitter
+-- natifs Roblox).
+local RunService = game:GetService("RunService")
+
+local WeatherGroupBox = Tabs.Visual:AddRightGroupbox("Météo", "cloud-rain")
+
+local WeatherPart = nil
+local WeatherEmitter = nil
+local WeatherConnection = nil
+local WeatherBaseRate = 0
+
+local WeatherPresets = {
+	["Aucun"] = nil,
+	["Pluie légère"] = {
+		Rate = 280, Color = ColorSequence.new(Color3.fromRGB(190, 210, 230)),
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.22), NumberSequenceKeypoint.new(1, 0.08) }),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 0.8) }),
+		Lifetime = NumberRange.new(1.2, 1.6), Speed = NumberRange.new(90, 110),
+		SpreadAngle = Vector2.new(3, 3), Acceleration = Vector3.new(0, -40, 0),
+		Rotation = NumberRange.new(0, 0), RotSpeed = NumberRange.new(0, 0), LightEmission = 0.05,
+	},
+	["Pluie forte"] = {
+		Rate = 900, Color = ColorSequence.new(Color3.fromRGB(170, 195, 220)),
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(1, 0.08) }),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.1), NumberSequenceKeypoint.new(1, 0.75) }),
+		Lifetime = NumberRange.new(1, 1.3), Speed = NumberRange.new(140, 170),
+		SpreadAngle = Vector2.new(6, 6), Acceleration = Vector3.new(0, -65, 0),
+		Rotation = NumberRange.new(0, 0), RotSpeed = NumberRange.new(0, 0), LightEmission = 0.05,
+	},
+	["Neige légère"] = {
+		Rate = 160, Color = ColorSequence.new(Color3.fromRGB(255, 255, 255)),
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 0.28) }),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.05), NumberSequenceKeypoint.new(1, 0.4) }),
+		Lifetime = NumberRange.new(4, 6), Speed = NumberRange.new(8, 15),
+		SpreadAngle = Vector2.new(20, 20), Acceleration = Vector3.new(0, -5, 0),
+		Rotation = NumberRange.new(0, 360), RotSpeed = NumberRange.new(-30, 30), LightEmission = 0.2,
+	},
+	["Neige forte"] = {
+		Rate = 500, Color = ColorSequence.new(Color3.fromRGB(255, 255, 255)),
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(1, 0.35) }),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.02), NumberSequenceKeypoint.new(1, 0.3) }),
+		Lifetime = NumberRange.new(3.5, 5), Speed = NumberRange.new(12, 22),
+		SpreadAngle = Vector2.new(35, 35), Acceleration = Vector3.new(0, -8, 0),
+		Rotation = NumberRange.new(0, 360), RotSpeed = NumberRange.new(-50, 50), LightEmission = 0.25,
+	},
+	["Poussière du désert"] = {
+		Rate = 140, Color = ColorSequence.new(Color3.fromRGB(205, 180, 135)),
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 0.45) }),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 1) }),
+		Lifetime = NumberRange.new(3, 5), Speed = NumberRange.new(15, 30),
+		SpreadAngle = Vector2.new(45, 20), Acceleration = Vector3.new(6, -2, 0),
+		Rotation = NumberRange.new(0, 360), RotSpeed = NumberRange.new(-20, 20), LightEmission = 0,
+	},
+	["Feuilles d'automne"] = {
+		Rate = 60, Color = ColorSequence.new(Color3.fromRGB(210, 130, 45)),
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.45), NumberSequenceKeypoint.new(1, 0.4) }),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.05), NumberSequenceKeypoint.new(1, 0.3) }),
+		Lifetime = NumberRange.new(4, 7), Speed = NumberRange.new(5, 10),
+		SpreadAngle = Vector2.new(35, 35), Acceleration = Vector3.new(3, -3, 0),
+		Rotation = NumberRange.new(0, 360), RotSpeed = NumberRange.new(-60, 60), LightEmission = 0,
+	},
+}
+
+local function DestroyWeather()
+	if WeatherConnection then
+		WeatherConnection:Disconnect()
+		WeatherConnection = nil
+	end
+	if WeatherPart then
+		WeatherPart:Destroy()
+		WeatherPart = nil
+	end
+	WeatherEmitter = nil
+	WeatherBaseRate = 0
+end
+
+local function ApplyWeather(name, intensityPercent)
+	DestroyWeather()
+
+	local preset = WeatherPresets[name]
+	if preset == nil then
+		return -- "Aucun" : pas de météo
+	end
+
+	local part = Instance.new("Part")
+	part.Name = "WeatherAnchor_NamelessHub"
+	part.Size = Vector3.new(300, 1, 300)
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanTouch = false
+	part.Transparency = 1
+	part.Parent = workspace
+
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Name = "WeatherEmitter_NamelessHub"
+	emitter.Rate = preset.Rate * ((intensityPercent or 100) / 100)
+	emitter.Color = preset.Color
+	emitter.Size = preset.Size
+	emitter.Transparency = preset.Transparency
+	emitter.Lifetime = preset.Lifetime
+	emitter.Speed = preset.Speed
+	emitter.SpreadAngle = preset.SpreadAngle
+	emitter.Acceleration = preset.Acceleration
+	emitter.Rotation = preset.Rotation
+	emitter.RotSpeed = preset.RotSpeed
+	emitter.LightEmission = preset.LightEmission
+	emitter.EmissionDirection = Enum.NormalId.Bottom
+	emitter.Parent = part
+
+	WeatherPart = part
+	WeatherEmitter = emitter
+	WeatherBaseRate = preset.Rate
+
+	local cam = workspace.CurrentCamera
+	WeatherConnection = RunService.RenderStepped:Connect(function()
+		if WeatherPart and cam then
+			WeatherPart.CFrame = CFrame.new(cam.CFrame.Position + Vector3.new(0, 55, 0))
+		end
+	end)
+end
+
+local WeatherNames = {}
+for name in pairs(WeatherPresets) do
+	table.insert(WeatherNames, name)
+end
+table.sort(WeatherNames)
+
+-- Comme pour le skybox : pas de Toggle séparé référencé dans le Callback,
+-- pour ne jamais dépendre d'un élément pas encore créé (voir le bug
+-- précédent du crosshair/skybox qui bloquait tout le chargement du menu).
+WeatherGroupBox:AddDropdown("WeatherPreset", {
+	Values = WeatherNames,
+	Default = "Aucun",
+	Text = "Type de météo",
+	Callback = function(Value)
+		local ok, err = pcall(ApplyWeather, Value, Options.WeatherIntensity and Options.WeatherIntensity.Value or 100)
+		if not ok then
+			warn("[Météo] Échec application '" .. tostring(Value) .. "' : " .. tostring(err))
+			Library:Notify("Erreur météo : " .. tostring(err), 4)
+		end
+	end,
+})
+
+WeatherGroupBox:AddSlider("WeatherIntensity", {
+	Text = "Intensité",
+	Default = 150,
+	Min = 10,
+	Max = 400,
+	Rounding = 0,
+	Suffix = "%",
+	Callback = function(Value)
+		if WeatherEmitter and WeatherBaseRate > 0 then
+			WeatherEmitter.Rate = WeatherBaseRate * (Value / 100)
+		end
+	end,
+})
+
+-- ==========================
+-- BULLET TRACER (effet visuel au tir)
+-- ==========================
+-- NOTE : chaque jeu a son propre système réseau pour "tirer" (RemoteEvent
+-- interne, propre à ce jeu). Impossible de s'y brancher de façon générique
+-- sans viser un jeu précis. Ici le déclencheur est le clic gauche (Mouse1),
+-- ce qui fonctionne pareil dans n'importe quel jeu : à chaque clic, on trace
+-- un rayon depuis la caméra vers le point visé et on dessine un trait 3D
+-- (tracer) qui s'estompe. Purement visuel, ça ne vise pas et ne verrouille
+-- aucune cible.
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local TracerGroupBox = Tabs.Visual:AddLeftGroupbox("Effets de tir", "zap")
+
+local function CreateTracer(origin, endPos, color, width, fadeTime)
+	local distance = (endPos - origin).Magnitude
+	if distance < 0.05 then return end
+
+	local tracer = Instance.new("Part")
+	tracer.Name = "BulletTracer_NamelessHub"
+	tracer.Anchored = true
+	tracer.CanCollide = false
+	tracer.CanTouch = false
+	tracer.CanQuery = false
+	tracer.Material = Enum.Material.Neon
+	tracer.Color = color
+	tracer.Size = Vector3.new(width, width, distance)
+	tracer.CFrame = CFrame.new(origin, endPos) * CFrame.new(0, 0, -distance / 2)
+	tracer.Parent = workspace
+
+	local tween = TweenService:Create(
+		tracer,
+		TweenInfo.new(fadeTime, Enum.EasingStyle.Linear),
+		{ Transparency = 1 }
+	)
+	tween:Play()
+	Debris:AddItem(tracer, fadeTime + 0.05)
+end
+
+local function FireTracer()
+	local cam = workspace.CurrentCamera
+	if not cam then return end
+
+	local origin = cam.CFrame.Position
+	local direction = cam.CFrame.LookVector * 1000
+
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	raycastParams.FilterDescendantsInstances = { LocalPlayer.Character }
+
+	local result = workspace:Raycast(origin, direction, raycastParams)
+	local endPos = result and result.Position or (origin + direction)
+
+	-- Origine visuelle légèrement décalée (simule un canon d'arme plutôt
+	-- que de partir pile du centre de la caméra)
+	local visualOrigin = origin + cam.CFrame.RightVector * 0.6 - cam.CFrame.UpVector * 0.4
+
+	local color = Options.TracerColor and Options.TracerColor.Value or Color3.fromRGB(255, 200, 80)
+	local width = Options.TracerWidth and Options.TracerWidth.Value or 0.12
+
+	CreateTracer(visualOrigin, endPos, color, width, 1.2)
+end
+
+TracerGroupBox:AddToggle("BulletTracerEnabled", {
+	Text = "Activer le bullet tracer (clic gauche)",
+	Default = false,
+})
+
+TracerGroupBox:AddLabel("Couleur du tracer"):AddColorPicker("TracerColor", {
+	Default = Color3.fromRGB(255, 200, 80),
+	Title = "Couleur du tracer",
+})
+
+TracerGroupBox:AddSlider("TracerWidth", {
+	Text = "Épaisseur",
+	Default = 0.12,
+	Min = 0.02,
+	Max = 0.5,
+	Rounding = 2,
+})
+
+TracerGroupBox:AddSlider("TracerHoldInterval", {
+	Text = "Intervalle en maintien (s)",
+	Default = 0.1,
+	Min = 0.03,
+	Max = 1,
+	Rounding = 2,
+})
+
+-- Clic gauche maintenu : un tracer part à chaque intervalle tant que le
+-- bouton reste enfoncé, pas seulement au moment du clic.
+local Mouse1Held = false
+local TracerHoldLoopRunning = false
+
+UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
+	if gameProcessedEvent then return end
+	if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+
+	Mouse1Held = true
+
+	if Toggles.BulletTracerEnabled and Toggles.BulletTracerEnabled.Value then
+		local ok, err = pcall(FireTracer)
+		if not ok then
+			warn("[Bullet Tracer] Échec : " .. tostring(err))
+		end
+	end
+
+	if not TracerHoldLoopRunning then
+		TracerHoldLoopRunning = true
+		task.spawn(function()
+			while Mouse1Held do
+				local interval = (Options.TracerHoldInterval and Options.TracerHoldInterval.Value) or 0.1
+				task.wait(interval)
+
+				if Mouse1Held and Toggles.BulletTracerEnabled and Toggles.BulletTracerEnabled.Value then
+					local ok2, err2 = pcall(FireTracer)
+					if not ok2 then
+						warn("[Bullet Tracer] Échec (maintien) : " .. tostring(err2))
+					end
+				end
+			end
+			TracerHoldLoopRunning = false
+		end)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessedEvent)
+	if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+	Mouse1Held = false
+end)
+
+-- ==========================
+-- FOV DÉCORATIF (multi-formes, 100% visuel, ne sert à rien niveau gameplay)
+-- ==========================
+-- Anneau polygonal centré sur l'écran, avec un dégradé noir/blanc qui
+-- tourne le long des bords. Purement esthétique : centré sur l'écran (pas
+-- sur la souris/une cible), donc aucun lien avec la visée.
+local FOVGroupBox = Tabs.Visual:AddRightGroupbox("FOV décoratif", "octagon")
+
+local FOVShapes = {
+	["Triangle"] = { Points = 3, InnerRatio = 1, AngleOffset = -math.pi / 2 },
+	["Carré"] = { Points = 4, InnerRatio = 1, AngleOffset = math.pi / 4 },
+	["Losange"] = { Points = 4, InnerRatio = 1, AngleOffset = 0 },
+	["Pentagone"] = { Points = 5, InnerRatio = 1, AngleOffset = -math.pi / 2 },
+	["Hexagone"] = { Points = 6, InnerRatio = 1, AngleOffset = 0 },
+	["Heptagone"] = { Points = 7, InnerRatio = 1, AngleOffset = -math.pi / 2 },
+	["Octogone"] = { Points = 8, InnerRatio = 1, AngleOffset = math.pi / 8 },
+	["Décagone"] = { Points = 10, InnerRatio = 1, AngleOffset = 0 },
+	["Étoile 5 branches"] = { Points = 5, InnerRatio = 0.45, AngleOffset = -math.pi / 2 },
+	["Étoile 6 branches"] = { Points = 6, InnerRatio = 0.5, AngleOffset = -math.pi / 2 },
+	["Cercle (32 côtés)"] = { Points = 32, InnerRatio = 1, AngleOffset = 0 },
+}
+
+local FOVShapeNames = {}
+for name in pairs(FOVShapes) do
+	table.insert(FOVShapeNames, name)
+end
+table.sort(FOVShapeNames)
+
+local FOVLines = {}
+local FOVLineCount = 0
+
+local function EnsureFOVLineCount(count)
+	if FOVLineCount == count then return end
+
+	for i = #FOVLines, count + 1, -1 do
+		if FOVLines[i] then
+			FOVLines[i]:Remove()
+			FOVLines[i] = nil
+		end
+	end
+
+	for i = 1, count do
+		if not FOVLines[i] then
+			local line = Drawing.new("Line")
+			line.Thickness = 2
+			line.Visible = false
+			FOVLines[i] = line
+		end
+	end
+
+	FOVLineCount = count
+end
+
+local function BuildPolygonVertices(centerX, centerY, radius, shape)
+	local vertexCount = shape.InnerRatio < 1 and shape.Points * 2 or shape.Points
+	local vertices = {}
+
+	for i = 1, vertexCount do
+		local angle = (i - 1) * (2 * math.pi / vertexCount) + shape.AngleOffset
+		local r = radius
+		if shape.InnerRatio < 1 and (i % 2 == 0) then
+			r = radius * shape.InnerRatio
+		end
+		vertices[i] = Vector2.new(centerX + r * math.cos(angle), centerY + r * math.sin(angle))
+	end
+
+	return vertices
+end
+
+local FOVPhase = 0
+
+local function UpdateFOVOctagon(dt)
+	if not (Toggles.FOVDecoEnabled and Toggles.FOVDecoEnabled.Value) then
+		for i = 1, #FOVLines do
+			FOVLines[i].Visible = false
+		end
+		return
+	end
+
+	local camera = workspace.CurrentCamera
+	if not camera then return end
+
+	local viewport = camera.ViewportSize
+	local centerX, centerY = viewport.X / 2, viewport.Y / 2
+	local radius = (Options.FOVDecoSize and Options.FOVDecoSize.Value) or 150
+	local speed = (Options.FOVDecoSpeed and Options.FOVDecoSpeed.Value) or 2
+	local shapeName = (Options.FOVDecoShape and Options.FOVDecoShape.Value) or "Octogone"
+	local shape = FOVShapes[shapeName] or FOVShapes["Octogone"]
+
+	FOVPhase = FOVPhase + dt * speed
+
+	local vertices = BuildPolygonVertices(centerX, centerY, radius, shape)
+	local n = #vertices
+	EnsureFOVLineCount(n)
+
+	for i = 1, n do
+		local line = FOVLines[i]
+		line.From = vertices[i]
+		line.To = vertices[(i % n) + 1]
+
+		-- Dégradé noir/blanc qui se déplace le long des côtés
+		local t = (i - 1) / n
+		local brightness = (math.sin((t * 2 * math.pi) + FOVPhase) + 1) / 2
+		line.Color = Color3.new(brightness, brightness, brightness)
+		line.Visible = true
+	end
+end
+
+FOVGroupBox:AddToggle("FOVDecoEnabled", {
+	Text = "Activer le FOV décoratif",
+	Default = false,
+})
+
+FOVGroupBox:AddDropdown("FOVDecoShape", {
+	Values = FOVShapeNames,
+	Default = "Octogone",
+	Text = "Forme",
+})
+
+FOVGroupBox:AddSlider("FOVDecoSize", {
+	Text = "Taille",
+	Default = 150,
+	Min = 50,
+	Max = 400,
+	Rounding = 0,
+})
+
+FOVGroupBox:AddSlider("FOVDecoSpeed", {
+	Text = "Vitesse du dégradé",
+	Default = 2,
+	Min = 0.2,
+	Max = 10,
+	Rounding = 1,
+})
+
+--=========================================
+--FovStreched
+--=========================================
+VisualRightGroupBox:AddToggle("FOVStreched", {
+    Text = "FOV Streched",
+    Default = false,
+    Callback = function(Value)
+
+        getgenv().StretchActive = Value
+
+        if Value then
+            local Camera = workspace.CurrentCamera
+
+            if not getgenv().StretchConnection then
+                getgenv().StretchConnection = game:GetService("RunService").RenderStepped:Connect(function()
+                    if getgenv().StretchActive then
+                        Camera.CFrame = Camera.CFrame * CFrame.new(
+                            0, 0, 0,
+                            1, 0, 0,
+                            0, 0.67, 0,
+                            0, 0, 1
+                        )
+                    end
+                end)
+            end
+        end
+
+    end
+})
+
+
+
+
+local WorldRightGroupBox = Tabs.World:AddRightGroupbox("Custom Hit Sound", "sliders")
+
+
+
+WorldRightGroupBox:AddToggle("CustomHit", {
+	Text = "CustomHit Sound",
+	Default = false,
+	Callback = function(Value)
+		if Value then
+			local soundtochange = "rbxassetid://4764109000" --Rust Sound
+
+			game:GetService("Players").LocalPlayer.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem.ClientViewModel.ChildAdded:Connect(function(v)
+				if v:IsA("Sound") and v.SoundId ~= "rbxassetid://16537449730" then
+					v.SoundId = soundtochange
+					v.Pitch = 1
+					v.Volume = 1
+				end
+			end)
+		else
+			task.wait("0.1")
+		end
+	end,
+})
+
+
+local CreditsGroupBox = Tabs.Credits:AddLeftGroupbox("Credits", "heart")
+
+CreditsGroupBox:AddLabel("Welcome to Rift Counter Hub!")
+CreditsGroupBox:AddDivider()
+CreditsGroupBox:AddLabel("Thank you for using the script.")
+
+
+CreditsGroupBox:AddLabel("Lead Developer")
+CreditsGroupBox:AddLabel("• OnixeSole")
+
+
+
+CreditsGroupBox:AddLabel("Special Thanks")
+CreditsGroupBox:AddLabel("• Obsidian UI Library")
+CreditsGroupBox:AddLabel("• Roblox Community")
+
+
+
+CreditsGroupBox:AddLabel("Version")
+CreditsGroupBox:AddLabel("v1.0.0")
+
+
+
+
+
+
+
+
+
+
+
+
+local Viewport = VisualGroupBox:AddViewport("MyViewport", {
+    Object = Instance.new("Part"),
+    Camera = Instance.new("Camera"),
+    Interactive = true,
+    AutoFocus = true,
+    Height = 200,
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+VisualRightGroupBox:AddToggle("DeviceSpoof", {
+    Text = "Device Spoof VR",
+    Default = false,
+    Callback = function(Value)
+		local ReplicatedStorage = game:GetService('ReplicatedStorage')
+		ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("VR") -- "Touch", "Gamepad", "MouseKeyboard"
+	end,
+
+})
+
+VisualRightGroupBox:AddToggle("DeviceSpoof", {
+    Text = "Device Spoof PC",
+    Default = false,
+    Callback = function(Value)
+		local ReplicatedStorage = game:GetService('ReplicatedStorage')
+		ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("MouseKeyboard") -- "Touch", "Gamepad", "MouseKeyboard"
+	end,
+
+})
+
+
+
+VisualRightGroupBox:AddToggle("DeviceSpoof", {
+    Text = "Device Spoof Gamepad",
+    Default = false,
+    Callback = function(Value)
+		local ReplicatedStorage = game:GetService('ReplicatedStorage')
+		ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("Gamepad") -- "Touch", "Gamepad", "MouseKeyboard"
+	end,
+
+})
+
+VisualRightGroupBox:AddToggle("DeviceSpoof", {
+    Text = "Device Spoof Touch",
+    Default = false,
+    Callback = function(Value)
+		local ReplicatedStorage = game:GetService('ReplicatedStorage')
+		ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("Touch") -- "Touch", "Gamepad", "MouseKeyboard"
+	end,
+
+})
+
+
+
+
+local RageGroupBox = Tabs.Rage:AddLeftGroupbox("Device Spoof", "world")
+
+RageGroupBox:AddToggle("DeviceSpoofloop", {
+    Text = "Device Spoof loop",
+    Default = false,
+})
+
+-- Mets la boucle juste après le AddToggle
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+
+        if Toggles.DeviceSpoofloop.Value then
+			local ReplicatedStorage = game:GetService('ReplicatedStorage')
+			ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("VR") -- "Touch", "Gamepad", "MouseKeyboard"
+			task.wait(0.1)
+			local ReplicatedStorage = game:GetService('ReplicatedStorage')
+			ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("MouseKeyboard") -- "Touch", "Gamepad", "MouseKeyboard"
+            task.wait(0.1)
+			local ReplicatedStorage = game:GetService('ReplicatedStorage')
+			ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("Gamepad") -- "Touch", "Gamepad", "MouseKeyboard"
+			task.wait(0.1)
+			local ReplicatedStorage = game:GetService('ReplicatedStorage')
+			ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("Touch") -- "Touch", "Gamepad", "MouseKeyboard"
+			task.wait(0.1)
+        end
+    end
+end)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- ==========================
+-- CROSSHAIR CUSTOM (losange / carré, dégradé comme le FOV octogone)
+-- ==========================
+-- Réticule statique au centre de l'écran (pas lié à la souris ni à un
+-- joueur), avec le même effet de dégradé noir/blanc qui tourne le long
+-- des bords que le FOV octogonal.
+local ESPGroupBox = Tabs.Visual:AddLeftGroupbox("ESP", "eye")
+
+-- Charger la bibliothèque ESP externe
+local ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/linemaster2/esp-library/main/library.lua"))()
+
+ESP.Enabled = false
+ESP.ShowBox = false
+ESP.ShowName = false
+ESP.ShowHealth = false
+ESP.ShowTracer = false
+ESP.ShowDistance = false
+ESP.ShowSkeletons = false
+
+local ESP_SETTINGS = {
+    BoxOutlineColor = Color3.new(1, 1, 1),
+    BoxColor = Color3.new(1, 1, 1),
+    NameColor = Color3.new(1, 1, 1),
+    HealthOutlineColor = Color3.new(0, 0, 0),
+    HealthHighColor = Color3.new(0, 1, 0),
+    HealthLowColor = Color3.new(1, 0, 0),
+    CharSize = Vector2.new(4, 6),
+    Teamcheck = false,
+    WallCheck = false,
+    Enabled = false,
+    ShowBox = false,
+    BoxType = "2D",
+    ShowName = false,
+    ShowHealth = false,
+    ShowDistance = false,
+    ShowSkeletons = false,
+    ShowTracer = false,
+    TracerColor = Color3.new(1, 1, 1), 
+    TracerThickness = 2,
+    SkeletonsColor = Color3.new(1, 1, 1),
+    TracerPosition = "Bottom",
+}
+
+ESPGroupBox:AddToggle("ESPEnabled", {
+    Text = "Enable ESP",
+    Default = false,
+    Callback = function(Value)
+        ESP.Enabled = Value
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPBox", {
+    Text = "ESP Box",
+    Default = false,
+    Callback = function(Value)
+        ESP.ShowBox = Value
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPName", {
+    Text = "ESP Name",
+    Default = false,
+    Callback = function(Value)
+        ESP.ShowName = Value
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPHealth", {
+    Text = "ESP Health",
+    Default = false,
+    Callback = function(Value)
+        ESP.ShowHealth = Value
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPTracer", {
+    Text = "ESP Tracer",
+    Default = false,
+    Callback = function(Value)
+        ESP.ShowTracer = Value
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPDistance", {
+    Text = "ESP Distance",
+    Default = false,
+    Callback = function(Value)
+        ESP.ShowDistance = Value
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPSkeletons", {
+    Text = "ESP Skeletons",
+    Default = false,
+    Callback = function(Value)
+        ESP.ShowSkeletons = Value
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPTeamCheck", {
+    Text = "Team Check",
+    Default = false,
+    Callback = function(Value)
+        ESP.TeamCheck = Value
+    end,
+})
+
+ESPGroupBox:AddDropdown("ESPBoxType", {
+    Values = {"2D", "Corner Box Esp"},
+    Default = "2D",
+    Text = "ESP Box Type",
+    Callback = function(Value)
+        ESP.BoxType = Value
+    end,
+})
+
+ESPGroupBox:AddDropdown("ESPTracerPosition", {
+    Values = {"Bottom", "Top", "Middle"},
+    Default = "Top",
+    Text = "Tracer Position",
+    Callback = function(Value)
+        ESP.TracerPosition = Value
+    end,
+})
+
+
+
+
+-- ==========================
+-- FREE CAM MODULE (Obsidian UI)
+-- ==========================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local FreeCamActive = false
+local FreeCamConnection = nil
+local OriginalCameraType = nil
+
+local MoveSpeed = 50
+local SprintMultiplier = 3
+local Sensitivity = 0.2
+
+local YawAngle = 0
+local PitchAngle = 0
+
+local KeysHeld = {
+	W = false, A = false, S = false, D = false,
+	Space = false, LeftShift = false, Q = false, E = false,
+}
+
+local function StartFreeCam()
+	if FreeCamActive then return end
+	FreeCamActive = true
+
+	OriginalCameraType = Camera.CameraType
+	Camera.CameraType = Enum.CameraType.Scriptable
+
+	local lookVector = Camera.CFrame.LookVector
+	YawAngle = math.atan2(-lookVector.X, -lookVector.Z)
+	PitchAngle = math.asin(lookVector.Y)
+
+	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+
+	FreeCamConnection = RunService.RenderStepped:Connect(function(deltaTime)
+		local mouseDelta = UserInputService:GetMouseDelta()
+		YawAngle = YawAngle - math.rad(mouseDelta.X * Sensitivity)
+		PitchAngle = math.clamp(
+			PitchAngle - math.rad(mouseDelta.Y * Sensitivity),
+			math.rad(-89), math.rad(89)
+		)
+
+		local rotationCFrame = CFrame.Angles(0, YawAngle, 0) * CFrame.Angles(PitchAngle, 0, 0)
+
+		local moveDirection = Vector3.new()
+		if KeysHeld.W then moveDirection += Vector3.new(0, 0, -1) end
+		if KeysHeld.S then moveDirection += Vector3.new(0, 0, 1) end
+		if KeysHeld.A then moveDirection += Vector3.new(-1, 0, 0) end
+		if KeysHeld.D then moveDirection += Vector3.new(1, 0, 0) end
+		if KeysHeld.Space or KeysHeld.E then moveDirection += Vector3.new(0, 1, 0) end
+		if KeysHeld.Q then moveDirection += Vector3.new(0, -1, 0) end
+
+		if moveDirection.Magnitude > 0 then
+			moveDirection = moveDirection.Unit
+		end
+
+		local currentSpeed = MoveSpeed
+		if KeysHeld.LeftShift then
+			currentSpeed *= SprintMultiplier
+		end
+
+		local worldMoveDirection = rotationCFrame:VectorToWorldSpace(moveDirection)
+		local newPosition = Camera.CFrame.Position + (worldMoveDirection * currentSpeed * deltaTime)
+
+		Camera.CFrame = CFrame.new(newPosition) * rotationCFrame
+	end)
+end
+
+local function StopFreeCam()
+	if not FreeCamActive then return end
+	FreeCamActive = false
+
+	if FreeCamConnection then
+		FreeCamConnection:Disconnect()
+		FreeCamConnection = nil
+	end
+
+	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+
+	if OriginalCameraType then
+		Camera.CameraType = OriginalCameraType
+	end
+
+	-- Garde le toggle du menu synchronisé même si StopFreeCam
+	-- est appelé depuis un autre endroit (ex: respawn)
+	if Toggles and Toggles.FreeCamEnabled and Toggles.FreeCamEnabled.Value then
+		Toggles.FreeCamEnabled:SetValue(false)
+	end
+end
+
+-- Coupe automatiquement la caméra libre au respawn
+LocalPlayer.CharacterAdded:Connect(function()
+	if FreeCamActive then
+		StopFreeCam()
+	end
+end)
+
+local KeyCodeMap = {
+	[Enum.KeyCode.W] = "W", [Enum.KeyCode.A] = "A",
+	[Enum.KeyCode.S] = "S", [Enum.KeyCode.D] = "D",
+	[Enum.KeyCode.Space] = "Space", [Enum.KeyCode.LeftShift] = "LeftShift",
+	[Enum.KeyCode.Q] = "Q", [Enum.KeyCode.E] = "E",
+}
+
+UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
+	if gameProcessedEvent then return end
+	local mapped = KeyCodeMap[input.KeyCode]
+	if mapped then
+		KeysHeld[mapped] = true
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessedEvent)
+	local mapped = KeyCodeMap[input.KeyCode]
+	if mapped then
+		KeysHeld[mapped] = false
+	end
+end)
+
+-- ===== UI OBSIDIAN =====
+-- Remplace "Tabs.Visuals:AddLeftGroupbox" par le tab/groupbox réel de ton menu
+local CameraGroupBox = Tabs.Visual:AddLeftGroupbox("Caméra")
+
+CameraGroupBox:AddToggle("FreeCamEnabled", {
+	Text = "Caméra libre",
+	Default = false,
+	Callback = function(Value)
+		if Value then
+			StartFreeCam()
+		else
+			StopFreeCam()
+		end
+	end,
+})
+
+CameraGroupBox:AddSlider("FreeCamSpeed", {
+	Text = "Vitesse de déplacement",
+	Default = 50,
+	Min = 5,
+	Max = 200,
+	Rounding = 0,
+	Callback = function(Value)
+		MoveSpeed = Value
+	end,
+})
+
+CameraGroupBox:AddLabel("Keybind Caméra libre"):AddKeyPicker("FreeCamKeybind", {
+	Default = "F5",
+	Mode = "Toggle",
+	Text = "Keybind Caméra libre",
+	Callback = function()
+		local currentState = Toggles.FreeCamEnabled.Value
+		Toggles.FreeCamEnabled:SetValue(not currentState)
+
+		if not currentState then
+			StartFreeCam()
+		else
+			StopFreeCam()
+		end
+	end,
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- ==========================
+-- TINY MESH MODE (wireframe/outline effect)
+-- ==========================
+-- Rend les modèles 3D invisibles sauf leurs contours extérieurs
+local TinyMeshGroupBox = Tabs.Visual:AddRightGroupbox("Tiny Mesh Mode", "mesh")
+
+local TinyMeshModelIDs = {
+	12613284249, 12613283569, 12613284036, 14652718299, 12613283355, 12613284529, 12613284768
+}
+
+local TinyMeshOriginalParts = {} -- Stocke les propriétés originales des parties
+local TinyMeshSelectionBoxes = {} -- Stocke les SelectionBox créés
+local TinyMeshConnection = nil
+
+local function ResetTinyMesh()
+	-- Nettoyer les SelectionBox
+	for _, selectionBox in pairs(TinyMeshSelectionBoxes) do
+		if selectionBox then
+			selectionBox:Destroy()
+		end
+	end
+	TinyMeshSelectionBoxes = {}
+	
+	-- Restaurer les propriétés originales des parties
+	for part, originalData in pairs(TinyMeshOriginalParts) do
+		if part and part.Parent then
+			part.Transparency = originalData.Transparency
+			part.Material = originalData.Material
+			part.Color = originalData.Color
+			part.Reflectance = originalData.Reflectance
+		end
+	end
+	TinyMeshOriginalParts = {}
+	
+	-- Déconnecter le rendu si actif
+	if TinyMeshConnection then
+		TinyMeshConnection:Disconnect()
+		TinyMeshConnection = nil
+	end
+end
+
+local function ApplyTinyMesh()
+	ResetTinyMesh()
+	
+	-- Chercher les modèles avec les IDs spécifiés
+	for _, modelID in pairs(TinyMeshModelIDs) do
+		-- Chercher dans tout le workspace
+		for _, obj in pairs(workspace:GetDescendants()) do
+			if obj:IsA("Model") and obj.Name == tostring(modelID) then
+				-- Appliquer l'effet wireframe à toutes les parties du modèle
+				for _, part in pairs(obj:GetDescendants()) do
+					if part:IsA("BasePart") then
+						-- Sauvegarder les propriétés originales
+						TinyMeshOriginalParts[part] = {
+							Transparency = part.Transparency,
+							Material = part.Material,
+							Color = part.Color,
+							Reflectance = part.Reflectance
+						}
+						
+						-- Rendre la partie transparente
+						part.Transparency = 1
+						part.Material = Enum.Material.SmoothPlastic
+						part.Reflectance = 0
+						
+						-- Créer un SelectionBox pour le contour
+						local selectionBox = Instance.new("SelectionBox")
+						selectionBox.Name = "TinyMeshOutline_NamelessHub"
+						selectionBox.Adornee = part
+						selectionBox.Color3 = Color3.fromRGB(255, 255, 255)
+						selectionBox.LineThickness = 0.05
+						selectionBox.Transparency = 0.5
+						selectionBox.Parent = part
+						table.insert(TinyMeshSelectionBoxes, selectionBox)
+					end
+				end
+			end
+		end
+	end
+	
+	-- Maintenir l'effet en continu (au cas où le jeu recharge les modèles)
+	TinyMeshConnection = RunService.RenderStepped:Connect(function()
+		if not (Toggles.TinyMeshEnabled and Toggles.TinyMeshEnabled.Value) then
+			ResetTinyMesh()
+			return
+		end
+		
+		-- Vérifier et réappliquer si nécessaire
+		for _, modelID in pairs(TinyMeshModelIDs) do
+			for _, obj in pairs(workspace:GetDescendants()) do
+				if obj:IsA("Model") and obj.Name == tostring(modelID) then
+					for _, part in pairs(obj:GetDescendants()) do
+						if part:IsA("BasePart") and not TinyMeshOriginalParts[part] then
+							-- Nouvelle partie détectée, appliquer l'effet
+							TinyMeshOriginalParts[part] = {
+								Transparency = part.Transparency,
+								Material = part.Material,
+								Color = part.Color,
+								Reflectance = part.Reflectance
+							}
+							
+							part.Transparency = 1
+							part.Material = Enum.Material.SmoothPlastic
+							part.Reflectance = 0
+							
+							local selectionBox = Instance.new("SelectionBox")
+							selectionBox.Name = "TinyMeshOutline_NamelessHub"
+							selectionBox.Adornee = part
+							selectionBox.Color3 = Color3.fromRGB(255, 255, 255)
+							selectionBox.LineThickness = 0.05
+							selectionBox.Transparency = 0.5
+							selectionBox.Parent = part
+							table.insert(TinyMeshSelectionBoxes, selectionBox)
+						elseif part:IsA("BasePart") and TinyMeshOriginalParts[part] then
+							-- Maintenir l'effet
+							part.Transparency = 1
+							part.Material = Enum.Material.SmoothPlastic
+							part.Reflectance = 0
+						end
+					end
+				end
+			end
+		end
+	end)
+end
+
+TinyMeshGroupBox:AddToggle("TinyMeshEnabled", {
+	Text = "Activer Tiny Mesh Mode",
+	Default = false,
+	Callback = function(Value)
+		if Value then
+			local ok, err = pcall(ApplyTinyMesh)
+			if not ok then
+				warn("[Tiny Mesh] Échec activation : " .. tostring(err))
+				Library:Notify("Tiny Mesh : échec - " .. tostring(err), 5)
+			end
+		else
+			ResetTinyMesh()
+		end
+	end,
+})
+
+TinyMeshGroupBox:AddLabel("Couleur des contours"):AddColorPicker("TinyMeshColor", {
+	Default = Color3.fromRGB(255, 255, 255),
+	Title = "Couleur des contours",
+	Callback = function(Value)
+		for _, selectionBox in pairs(TinyMeshSelectionBoxes) do
+			if selectionBox then
+				selectionBox.Color3 = Value
+			end
+		end
+	end,
+})
+
+TinyMeshGroupBox:AddSlider("TinyMeshThickness", {
+	Text = "Épaisseur des contours",
+	Default = 0.05,
+	Min = 0.01,
+	Max = 0.2,
+	Rounding = 2,
+	Callback = function(Value)
+		for _, selectionBox in pairs(TinyMeshSelectionBoxes) do
+			if selectionBox then
+				selectionBox.LineThickness = Value
+			end
+		end
+	end,
+})
+
+TinyMeshGroupBox:AddSlider("TinyMeshTransparency", {
+	Text = "Transparence des contours",
+	Default = 0.5,
+	Min = 0,
+	Max = 1,
+	Rounding = 2,
+	Callback = function(Value)
+		for _, selectionBox in pairs(TinyMeshSelectionBoxes) do
+			if selectionBox then
+				selectionBox.Transparency = Value
+			end
+		end
+	end,
+})
+
+local CrosshairGroupBox = Tabs.Visual:AddRightGroupbox("Crosshair custom", "crosshair")
+
+local CrosshairShapes = {
+	["Losange"] = { AngleOffset = 0 },
+	["Carré"] = { AngleOffset = math.pi / 4 },
+}
+
+local CrosshairLines = {}
+for i = 1, 4 do
+	local line = Drawing.new("Line")
+	line.Thickness = 2
+	line.Visible = false
+	CrosshairLines[i] = line
+end
+
+local CrosshairPhase = 0
+
+local function UpdateCrosshair(dt)
+	if not (Toggles.CrosshairEnabled and Toggles.CrosshairEnabled.Value) then
+		for i = 1, 4 do
+			CrosshairLines[i].Visible = false
+		end
+		return
+	end
+
+	local camera = workspace.CurrentCamera
+	if not camera then return end
+
+	local viewport = camera.ViewportSize
+	local centerX, centerY = viewport.X / 2, viewport.Y / 2
+
+	local shapeName = (Options.CrosshairShape and Options.CrosshairShape.Value) or "Losange"
+	local shape = CrosshairShapes[shapeName] or CrosshairShapes["Losange"]
+	local radius = (Options.CrosshairSize and Options.CrosshairSize.Value) or 20
+	local speed = (Options.CrosshairSpeed and Options.CrosshairSpeed.Value) or 3
+
+	CrosshairPhase = CrosshairPhase + dt * speed
+
+	local vertices = {}
+	for i = 1, 4 do
+		local angle = (i - 1) * (2 * math.pi / 4) + shape.AngleOffset
+		vertices[i] = Vector2.new(
+			centerX + radius * math.cos(angle),
+			centerY + radius * math.sin(angle)
+		)
+	end
+
+	for i = 1, 4 do
+		local line = CrosshairLines[i]
+		line.From = vertices[i]
+		line.To = vertices[(i % 4) + 1]
+
+		local t = (i - 1) / 4
+		local brightness = (math.sin((t * 2 * math.pi) + CrosshairPhase) + 1) / 2
+		line.Color = Color3.new(brightness, brightness, brightness)
+		line.Visible = true
+	end
+end
+
+CrosshairGroupBox:AddToggle("CrosshairEnabled", {
+	Text = "Activer le crosshair custom",
+	Default = false,
+})
+
+CrosshairGroupBox:AddDropdown("CrosshairShape", {
+	Values = { "Losange", "Carré" },
+	Default = "Losange",
+	Text = "Forme",
+})
+
+CrosshairGroupBox:AddSlider("CrosshairSize", {
+	Text = "Taille",
+	Default = 20,
+	Min = 5,
+	Max = 100,
+	Rounding = 0,
+})
+
+CrosshairGroupBox:AddSlider("CrosshairSpeed", {
+	Text = "Vitesse du dégradé",
+	Default = 3,
+	Min = 0.2,
+	Max = 10,
+	Rounding = 1,
+})
+
+RunService.RenderStepped:Connect(function(dt)
+	local ok, err = pcall(UpdateFOVOctagon, dt)
+	if not ok then
+		warn("[FOV décoratif] Échec : " .. tostring(err))
+	end
+
+	local ok2, err2 = pcall(UpdateCrosshair, dt)
+	if not ok2 then
+		warn("[Crosshair custom] Échec : " .. tostring(err2))
+	end
+end)
+
+Library:OnUnload(function()
+	for i = 1, #FOVLines do
+		if FOVLines[i] then
+			FOVLines[i]:Remove()
+			FOVLines[i] = nil
+		end
+	end
+	for i = 1, 4 do
+		if CrosshairLines[i] then
+			CrosshairLines[i]:Remove()
+			CrosshairLines[i] = nil
+		end
+	end
+	
+	-- Cleanup Tiny Mesh
+	ResetTinyMesh()
+	
+	-- Cleanup Triggerbot
+	if _G.DisableTriggerbot then
+		_G.DisableTriggerbot()
+	end
+	
+	-- Cleanup VoidSpam
+	DisableVoidSpam()
+	
+	print("Menu déchargé !")
+end)
+
+-- ==========================
+-- PLAYER
+-- ==========================
+local PlayerGroupBox = Tabs.Player:AddLeftGroupbox("Player", "user")
+
+local PlayerPlayers = game:GetService("Players")
+local PlayerLocalPlayer = PlayerPlayers.LocalPlayer
+
+-- ==========================
+-- FREECAM TP (Déplacement par petites téléportations)
+-- ==========================
+local FreeCamTPConfig = {
+	Enabled = false,
+	MoveSpeed = 50,
+	SprintMultiplier = 3,
+	TeleportStep = 2, -- Distance de chaque petite téléportation
+	OriginalCameraType = nil,
+	OriginalCameraCFrame = nil,
+}
+
+local FreeCamTPConnection = nil
+local FreeCamTPKeysHeld = {
+	W = false, A = false, S = false, D = false,
+	Space = false, LeftShift = false, Q = false, E = false,
+}
+
+local function EnableFreeCamTP()
+	FreeCamTPConfig.Enabled = true
+	
+	local camera = workspace.CurrentCamera
+	if camera then
+		FreeCamTPConfig.OriginalCameraType = camera.CameraType
+		FreeCamTPConfig.OriginalCameraCFrame = camera.CFrame
+		camera.CameraType = Enum.CameraType.Scriptable
+	end
+	
+	if FreeCamTPConnection then
+		FreeCamTPConnection:Disconnect()
+	end
+	
+	FreeCamTPConnection = game:GetService("RunService").RenderStepped:Connect(function(deltaTime)
+		if not FreeCamTPConfig.Enabled then return end
+		
+		local character = PlayerLocalPlayer.Character
+		if not character then return end
+		
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		if not humanoidRootPart then return end
+		
+		local camera = workspace.CurrentCamera
+		if not camera then return end
+		
+		-- Calculer la direction de déplacement basée sur la caméra
+		local moveDirection = Vector3.new()
+		if FreeCamTPKeysHeld.W then moveDirection += camera.CFrame.LookVector end
+		if FreeCamTPKeysHeld.S then moveDirection -= camera.CFrame.LookVector end
+		if FreeCamTPKeysHeld.A then moveDirection -= camera.CFrame.RightVector end
+		if FreeCamTPKeysHeld.D then moveDirection += camera.CFrame.RightVector end
+		if FreeCamTPKeysHeld.Space or FreeCamTPKeysHeld.E then moveDirection += Vector3.new(0, 1, 0) end
+		if FreeCamTPKeysHeld.Q then moveDirection -= Vector3.new(0, 1, 0) end
+		
+		if moveDirection.Magnitude > 0 then
+			moveDirection = moveDirection.Unit
+		end
+		
+		local currentSpeed = FreeCamTPConfig.MoveSpeed
+		if FreeCamTPKeysHeld.LeftShift then
+			currentSpeed = currentSpeed * FreeCamTPConfig.SprintMultiplier
+		end
+		
+		-- Téléportation par petits pas pour simuler le déplacement
+		local teleportDistance = currentSpeed * deltaTime
+		
+		-- Utiliser plusieurs petites téléportations si la distance est grande
+		local steps = math.ceil(teleportDistance / FreeCamTPConfig.TeleportStep)
+		local stepDistance = teleportDistance / steps
+		
+		for i = 1, steps do
+			local newPosition = camera.CFrame.Position + (moveDirection * stepDistance)
+			humanoidRootPart.CFrame = CFrame.new(newPosition, camera.CFrame.LookVector)
+			camera.CFrame = CFrame.new(newPosition, camera.CFrame.LookVector)
+		end
+	end)
+end
+
+local function DisableFreeCamTP()
+	FreeCamTPConfig.Enabled = false
+	
+	if FreeCamTPConnection then
+		FreeCamTPConnection:Disconnect()
+		FreeCamTPConnection = nil
+	end
+	
+	local camera = workspace.CurrentCamera
+	if camera then
+		if FreeCamTPConfig.OriginalCameraType then
+			camera.CameraType = FreeCamTPConfig.OriginalCameraType
+		end
+	end
+	
+	-- Réinitialiser les touches
+	for key in pairs(FreeCamTPKeysHeld) do
+		FreeCamTPKeysHeld[key] = false
+	end
+end
+
+-- Gestion des touches pour le FreeCam TP
+local UserInputService = game:GetService("UserInputService")
+local KeyCodeMap = {
+	[Enum.KeyCode.W] = "W", [Enum.KeyCode.A] = "A",
+	[Enum.KeyCode.S] = "S", [Enum.KeyCode.D] = "D",
+	[Enum.KeyCode.Space] = "Space", [Enum.KeyCode.LeftShift] = "LeftShift",
+	[Enum.KeyCode.Q] = "Q", [Enum.KeyCode.E] = "E",
+}
+
+UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
+	if gameProcessedEvent then return end
+	local mapped = KeyCodeMap[input.KeyCode]
+	if mapped then
+		FreeCamTPKeysHeld[mapped] = true
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessedEvent)
+	local mapped = KeyCodeMap[input.KeyCode]
+	if mapped then
+		FreeCamTPKeysHeld[mapped] = false
+	end
+end)
+
+-- Interface FreeCam TP
+PlayerGroupBox:AddToggle("FreeCamTPEnabled", {
+	Text = "FreeCam TP (Téléportation par petits pas)",
+	Default = false,
+	Callback = function(Value)
+		if Value then
+			EnableFreeCamTP()
+		else
+			DisableFreeCamTP()
+		end
+	end,
+})
+
+PlayerGroupBox:AddLabel("Keybind FreeCam TP"):AddKeyPicker("FreeCamTPKeybind", {
+	Default = "None",
+	Mode = "Toggle",
+	Text = "Keybind FreeCam TP",
+	Callback = function()
+		local currentState = Toggles.FreeCamTPEnabled.Value
+		Toggles.FreeCamTPEnabled:SetValue(not currentState)
+		
+		if not currentState then
+			EnableFreeCamTP()
+		else
+			DisableFreeCamTP()
+		end
+	end,
+})
+
+PlayerGroupBox:AddSlider("FreeCamTPSpeed", {
+	Text = "Vitesse de déplacement",
+	Default = 50,
+	Min = 10,
+	Max = 200,
+	Rounding = 0,
+	Callback = function(Value)
+		FreeCamTPConfig.MoveSpeed = Value
+	end,
+})
+
+PlayerGroupBox:AddSlider("FreeCamTPStep", {
+	Text = "Distance par téléportation",
+	Default = 2,
+	Min = 0.5,
+	Max = 5,
+	Rounding = 1,
+	Callback = function(Value)
+		FreeCamTPConfig.TeleportStep = Value
+	end,
+})
+
+PlayerGroupBox:AddToggle("PlayerExample", {
+	Text = "Exemple Player",
+	Default = false,
+	Callback = function(Value)
+		print("[Player] PlayerExample:", Value)
+	end,
+})
+
+local PlayerRightGroupBox = Tabs.Player:AddRightGroupbox("Réglages", "sliders")
+PlayerRightGroupBox:AddSlider("PlayerSlider", {
+	Text = "Exemple slider Player",
+	Default = 16,
+	Min = 8,
+	Max = 50,
+	Rounding = 0,
+	Callback = function(Value)
+		print("[Player] PlayerSlider:", Value)
+	end,
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- ==========================
+-- CAMÉRA 3E PERSONNE (SHIFT LOCK)
+-- ==========================
+-- Même principe que le Shift Lock officiel de Roblox : la caméra se
+-- verrouille derrière/à côté du personnage, la souris tourne la caméra
+-- sans bouger le curseur, et le personnage s'oriente automatiquement
+-- dans la direction regardée (au lieu de tourner uniquement avec les
+-- touches de déplacement).
+local ShiftLockEnabled = false
+local ShiftLockConnection = nil
+
+local function GetCharacterParts()
+	local character = LocalPlayer.Character
+	if not character then return nil, nil end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	return humanoid, rootPart
+end
+
+local function EnableShiftLock()
+	local humanoid, rootPart = GetCharacterParts()
+	if not humanoid or not rootPart then
+		error("Personnage introuvable pour activer le Shift Lock")
+	end
+
+	humanoid.AutoRotate = false
+	humanoid.CameraOffset = Vector3.new(1.75, 0, 0)
+	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+
+	if ShiftLockConnection then
+		ShiftLockConnection:Disconnect()
+	end
+
+	ShiftLockConnection = RunService.RenderStepped:Connect(function()
+		local hum, root = GetCharacterParts()
+		local cam = workspace.CurrentCamera
+		if not hum or not root or not cam then return end
+
+		local _, camYaw = cam.CFrame:ToOrientation()
+		root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, camYaw, 0)
+	end)
+end
+
+local function DisableShiftLock()
+	if ShiftLockConnection then
+		ShiftLockConnection:Disconnect()
+		ShiftLockConnection = nil
+	end
+
+	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+
+	local humanoid = GetCharacterParts()
+	if humanoid then
+		humanoid.AutoRotate = true
+		humanoid.CameraOffset = Vector3.new(0, 0, 0)
+	end
+end
+
+PlayerGroupBox:AddToggle("ShiftLockEnabled", {
+	Text = "Caméra 3e personne (Shift Lock)",
+	Default = false,
+	Callback = function(Value)
+		ShiftLockEnabled = Value
+		if Value then
+			local ok, err = pcall(EnableShiftLock)
+			if not ok then
+				warn("[ShiftLock] Échec activation : " .. tostring(err))
+				Library:Notify("Shift Lock : échec - " .. tostring(err), 5)
+			end
+		else
+			DisableShiftLock()
+		end
+	end,
+})
+
+-- Réapplique après un respawn si le toggle était actif
+LocalPlayer.CharacterAdded:Connect(function()
+	if ShiftLockEnabled then
+		task.wait(1)
+		local ok, err = pcall(EnableShiftLock)
+		if not ok then
+			warn("[ShiftLock] Échec relance après respawn : " .. tostring(err))
+		end
+	end
+end)
+
+-- ==========================
+-- EMOTE "TORNADE" (boucle tant que le toggle est actif)
+-- ==========================
+local TornadeAnimId = "rbxassetid://135083431918533"
+local TornadeAnimTrack = nil
+local TornadeActive = false
+
+local function StopTornadeEmote()
+	if TornadeAnimTrack then
+		TornadeAnimTrack:Stop()
+		TornadeAnimTrack:Destroy()
+		TornadeAnimTrack = nil
+	end
+end
+
+local function PlayTornadeEmote()
+	StopTornadeEmote()
+
+	local character = LocalPlayer.Character
+	if not character then
+		error("Aucun personnage trouvé (LocalPlayer.Character est nil)")
+	end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		error("Aucun Humanoid trouvé dans le personnage")
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		animator = Instance.new("Animator")
+		animator.Parent = humanoid
+	end
+
+	local animation = Instance.new("Animation")
+	animation.AnimationId = TornadeAnimId
+
+	local track = animator:LoadAnimation(animation)
+	if not track then
+		error("LoadAnimation n'a renvoyé aucune track (animation peut-être invalide/non autorisée)")
+	end
+
+	-- Priorité max pour ne pas être écrasée par l'idle/marche par défaut
+	track.Priority = Enum.AnimationPriority.Action4
+	track.Looped = true
+	track:Play()
+	TornadeAnimTrack = track
+end
+
+PlayerGroupBox:AddToggle("TornadeEmoteEnabled", {
+	Text = "Tornade (emote en boucle)",
+	Default = false,
+	Callback = function(Value)
+		TornadeActive = Value
+		if Value then
+			local ok, err = pcall(PlayTornadeEmote)
+			if not ok then
+				warn("[Tornade] Échec lancement : " .. tostring(err))
+				Library:Notify("Tornade : échec - " .. tostring(err), 5)
+			end
+		else
+			StopTornadeEmote()
+		end
+	end,
+})
+
+-- Relance l'emote automatiquement si le personnage respawn pendant que
+-- le toggle reste activé
+LocalPlayer.CharacterAdded:Connect(function()
+	if TornadeActive then
+		task.wait(1)
+		local ok, err = pcall(PlayTornadeEmote)
+		if not ok then
+			warn("[Tornade] Échec relance après respawn : " .. tostring(err))
+		end
+	end
+end)
+
+-- ==========================
+-- CONFIG (SaveManager + ThemeManager par défaut)
+-- ==========================
+
+-- Bouton de déchargement + keybind du menu, comme dans l'exemple d'origine
+local MenuGroup = Tabs.Config:AddLeftGroupbox("Menu", "wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen", {
+	Default = Library.KeybindFrame.Visible,
+	Text = "Ouvrir le menu des keybinds",
+	Callback = function(value)
+		Library.KeybindFrame.Visible = value
+	end,
+})
+
+MenuGroup:AddToggle("ShowCustomCursor", {
+	Text = "Curseur personnalisé",
+	Default = true,
+	Callback = function(Value)
+		Library.ShowCustomCursor = Value
+	end,
+})
+
+MenuGroup:AddDropdown("NotificationSide", {
+	Values = { "Left", "Right" },
+	Default = "Right",
+	Text = "Côté des notifications",
+	Callback = function(Value)
+		Library:SetNotifySide(Value)
+	end,
+})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Touche du menu")
+	:AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = true, Text = "Touche du menu" })
+
+MenuGroup:AddButton("Unload", function()
+	Library:Unload()
+end)
+
+Library.ToggleKeybind = Options.MenuKeybind
+
+-- ==========================
+-- Branchement des Managers (avec vérifications pour éviter
+-- un échec silencieux si l'executor a un souci de système de fichiers)
+-- ==========================
+local HUB_FOLDER = "MonScriptHub"
+local CONFIG_FOLDER = HUB_FOLDER .. "/config"
+
+-- 1) On s'assure que les dossiers existent AVANT de brancher les Managers.
+--    C'est la cause la plus fréquente d'un SaveManager qui "ne charge pas" :
+--    le dossier parent n'existe pas encore quand SetFolder est appelé.
+local fsOk, fsErr = pcall(function()
+	if not isfolder(HUB_FOLDER) then
+		makefolder(HUB_FOLDER)
+	end
+	if not isfolder(CONFIG_FOLDER) then
+		makefolder(CONFIG_FOLDER)
+	end
+end)
+
+if not fsOk then
+	Library:Notify("Erreur dossiers config : " .. tostring(fsErr), 6)
+	warn("[SaveManager] Impossible de créer les dossiers : " .. tostring(fsErr))
+	warn("[SaveManager] Ton executor ne supporte peut-être pas isfolder/makefolder/writefile.")
+end
+
+-- 2) Branchement des Managers sur la Library
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+
+-- 3) On ignore les paramètres de thème pour ne pas les sauvegarder dans les configs
+SaveManager:IgnoreThemeSettings()
+
+-- 4) On ignore la touche du menu (elle ne doit pas changer selon la config)
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+
+-- 5) Dossiers de sauvegarde
+ThemeManager:SetFolder(HUB_FOLDER)
+SaveManager:SetFolder(CONFIG_FOLDER)
+
+-- 6) Construit la section config (liste, sauvegarde, chargement, autoload)
+--    IMPORTANT : ceci doit arriver APRÈS que tous les AddToggle/AddSlider/
+--    AddDropdown/AddColorPicker du script (Main, Visual, Player...) aient
+--    été créés, sinon ces options ne seront pas incluses dans les configs.
+--    C'est déjà le cas ici car ce bloc est tout en bas du script.
+local buildOk, buildErr = pcall(function()
+	SaveManager:BuildConfigSection(Tabs.Config)
+	ThemeManager:ApplyToTab(Tabs.Config)
+end)
+
+if not buildOk then
+	Library:Notify("Erreur construction Config : " .. tostring(buildErr), 6)
+	warn("[SaveManager] BuildConfigSection/ApplyToTab a échoué : " .. tostring(buildErr))
+end
+
+-- 7) Charge automatiquement la config marquée "autoload" si elle existe
+local loadOk, loadErr = pcall(function()
+	SaveManager:LoadAutoloadConfig()
+end)
+
+if not loadOk then
+	Library:Notify("Erreur autoload config : " .. tostring(loadErr), 6)
+	warn("[SaveManager] LoadAutoloadConfig a échoué : " .. tostring(loadErr))
+end
+
+
+
+
+
+
+
+
+
