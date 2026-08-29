@@ -1,0 +1,64 @@
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/main/Library.lua"))()
+
+local Window = Library:CreateWindow({
+    Title = "Rift BETA",
+    Footer = "Key",
+    Center = true,
+    AutoShow = true,
+    Size = UDim2.fromOffset(430, 320) -- Fenêtre plus petite
+})
+
+local KeyTab = Window:AddKeyTab("Key", "key")
+
+local LOCAL_KEY = "Admin123"
+
+KeyTab:AddLabel({
+    Text = "Entrez votre clé",
+    Size = 12, -- Texte plus petit
+    DoesWrap = false,
+})
+
+KeyTab:AddKeyBox(function(Key)
+    if Key == LOCAL_KEY then
+        
+
+        -- Ferme le menu
+        Window:Destroy() -- ou Library:Destroy() selon la version d'Obsidian
+    else
+        Library:Notify({
+            Title = "Erreur",
+            Description = "Clé incorrecte.",
+            Time = 3
+        })
+    end
+end)
+
+local InfoTab = Window:AddTab("Infos", "info")
+
+
+
+
+local InfoGroup = InfoTab:AddGroupbox({
+    Side = "Left",
+    Name = "Information"
+})
+
+InfoGroup:AddLabel({
+    Text = "Bienvenue sur Rift Hub BETA",
+    Size = 16,
+    DoesWrap = true,
+})
+
+InfoGroup:AddDivider()
+
+InfoGroup:AddLabel({
+    Text = "Prix des clés\n\n1 Month : 3,00 €\nLifetime : 9,99 €",
+    DoesWrap = true,
+})
+
+InfoGroup:AddDivider()
+
+InfoGroup:AddLabel({
+    Text = "Discord : discord.gg/TONINVITATION",
+    DoesWrap = true,
+})
