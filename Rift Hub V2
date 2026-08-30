@@ -10,6 +10,12 @@ local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
 local Options = Library.Options
 local Toggles = Library.Toggles
 
+-- Services partagés pour réduire les variables
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
 Library.ForceCheckbox = false
 Library.ShowToggleFrameInKeybinds = true
 
@@ -54,9 +60,6 @@ local ShotgunRageGroupBox = Tabs.Main:AddRightGroupbox("Shotgun Rage", "crosshai
 -- ==========================
 -- BOOST CONFIGURATION
 -- ==========================
-local BoostPlayers = game:GetService("Players")
-local BoostLocalPlayer = BoostPlayers.LocalPlayer
-local BoostRunService = game:GetService("RunService")
 
 local BoostConfig = {
 	WalkSpeedEnabled = false,
@@ -71,18 +74,16 @@ local BoostOriginalFriction = 0.3
 local BoostConnection = nil
 
 local function ApplyBoost()
-	local character = BoostLocalPlayer.Character
+	local character = LocalPlayer.Character
 	if not character then return end
 	
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
 	
-	-- WalkSpeed
 	if BoostConfig.WalkSpeedEnabled then
 		humanoid.WalkSpeed = BoostConfig.WalkSpeedValue
 	end
 	
-	-- JumpPower
 	if BoostConfig.JumpPowerEnabled then
 		humanoid.JumpPower = BoostConfig.JumpPowerValue
 	end
@@ -93,7 +94,7 @@ local function StartBoostLoop()
 		BoostConnection:Disconnect()
 	end
 	
-	BoostConnection = BoostRunService.RenderStepped:Connect(function()
+	BoostConnection = RunService.RenderStepped:Connect(function()
 		ApplyBoost()
 	end)
 end
@@ -104,8 +105,7 @@ local function StopBoostLoop()
 		BoostConnection = nil
 	end
 	
-	-- Restaurer les valeurs originales
-	local character = BoostLocalPlayer.Character
+	local character = LocalPlayer.Character
 	if character then
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
@@ -116,7 +116,7 @@ local function StopBoostLoop()
 end
 
 local function SaveOriginalValues()
-	local character = BoostLocalPlayer.Character
+	local character = LocalPlayer.Character
 	if not character then return end
 	
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -126,11 +126,9 @@ local function SaveOriginalValues()
 	end
 end
 
--- Sauvegarder les valeurs originales au démarrage
 SaveOriginalValues()
 
--- Mettre à jour quand le personnage respawn
-BoostLocalPlayer.CharacterAdded:Connect(function()
+LocalPlayer.CharacterAdded:Connect(function()
 	task.wait(1)
 	SaveOriginalValues()
 	if BoostConfig.WalkSpeedEnabled or BoostConfig.JumpPowerEnabled then
@@ -190,21 +188,17 @@ BoostGroupBox:AddSlider("BoostJumpPowerValue", {
 -- ==========================
 -- RAGE BOT
 -- ==========================
-local RageBotPlayers = game:GetService("Players")
-local RageBotLocalPlayer = RageBotPlayers.LocalPlayer
-local RageBotRunService = game:GetService("RunService")
-local RageBotUserInputService = game:GetService("UserInputService")
 
 local RageBotConfig = {
 	Enabled = false,
 	TeamCheck = true,
-	TeleportDistance = 10, -- Distance en dessous du joueur
+	TeleportDistance = 10, -- Distance au-dessus du joueur
 	MinHealth = 1, -- Santé minimale de la cible pour être valide
 	TookDamage = false, -- Indicateur si on a pris des dégâts
 	LastHealth = 100, -- Dernière santé connue
 	OriginalCameraType = nil, -- Sauvegarder le CameraType original
 	OriginalCameraCFrame = nil, -- Sauvegarder la position originale de la caméra
-	RotationSpeed = 180, -- Vitesse de rotation (degrés par seconde)
+	RotationSpeed = 720, -- Vitesse de rotation très rapide (degrés par seconde)
 	RotationRadius = 3, -- Rayon de rotation autour de la cible
 	CurrentAngle = 0, -- Angle actuel de rotation
 }
@@ -220,14 +214,14 @@ RageBotStatusText.OutlineColor = Color3.fromRGB(0, 0, 0)
 RageBotStatusText.Center = false
 
 local function GetRageBotTarget()
-	local character = RageBotLocalPlayer.Character
+	local character = LocalPlayer.Character
 	if not character then return nil end
 	
 	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
 	if not humanoidRootPart then return nil end
 	
-	for _, player in pairs(RageBotPlayers:GetPlayers()) do
-		if player == RageBotLocalPlayer then continue end
+	for _, player in pairs(Players:GetPlayers()) do
+		if player == LocalPlayer then continue end
 		
 		local targetCharacter = player.Character
 		if not targetCharacter then continue end
@@ -238,9 +232,8 @@ local function GetRageBotTarget()
 		-- Health check : vérifier que la cible a assez de santé
 		if humanoid.Health < RageBotConfig.MinHealth then continue end
 		
-		-- Team check : vérifier que la cible n'est pas dans la même équipe
 		if RageBotConfig.TeamCheck then
-			if player.Team and RageBotLocalPlayer.Team and player.Team == RageBotLocalPlayer.Team then
+			if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
 				continue
 			end
 		end
@@ -254,14 +247,17 @@ end
 local function RageBotCycle()
 	if not RageBotConfig.Enabled then return end
 	
-	local character = RageBotLocalPlayer.Character
+	local character = LocalPlayer.Character
 	if not character then return end
 	
 	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
 	if not humanoidRootPart then return end
 	
-	-- Ancrer le personnage pour éviter de tomber
-	humanoidRootPart.Anchored = true
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+	
+	-- Désancrer le personnage pour permettre le mouvement
+	humanoidRootPart.Anchored = false
 	
 	local target = GetRageBotTarget()
 	
@@ -279,28 +275,25 @@ local function RageBotCycle()
 		if targetCharacter then
 			local targetHumanoidRootPart = targetCharacter:FindFirstChild("HumanoidRootPart")
 			if targetHumanoidRootPart then
-				-- Mettre à jour l'angle de rotation
-				local deltaTime = 1/60 -- Environ 60 FPS
+				-- Mettre à jour l'angle de rotation très rapidement
+				local deltaTime = 1/120 -- Environ 120 FPS pour mouvements ultra-rapides
 				RageBotConfig.CurrentAngle = (RageBotConfig.CurrentAngle + RageBotConfig.RotationSpeed * deltaTime) % 360
 				
 				-- Calculer la position rotative autour de la cible
 				local targetPos = targetHumanoidRootPart.Position
 				local angleRad = math.rad(RageBotConfig.CurrentAngle)
 				
-				-- Position en dessous avec rotation
+				-- Position au-dessus avec rotation
 				local offsetX = math.cos(angleRad) * RageBotConfig.RotationRadius
 				local offsetZ = math.sin(angleRad) * RageBotConfig.RotationRadius
-				local teleportPos = targetPos + Vector3.new(offsetX, -RageBotConfig.TeleportDistance, offsetZ)
+				local teleportPos = targetPos + Vector3.new(offsetX, RageBotConfig.TeleportDistance, offsetZ)
 				
-				-- Créer un CFrame qui regarde vers le ciel (rotation -90 degrés sur l'axe X)
-				-- Cela oriente le personnage pour regarder vers le haut
-				local lookAtSkyCFrame = CFrame.new(teleportPos) * CFrame.Angles(math.rad(-90), 0, 0)
+				-- Utiliser Humanoid:MoveTo() qui est accepté par le serveur
+				humanoid:MoveTo(teleportPos)
 				
-				-- Technique Shotgun Rage : CFrame.new(position, lookAt) direct
-				local orbitPosition = targetPos + Vector3.new(offsetX, -RageBotConfig.TeleportDistance, offsetZ)
-				
-				-- Positionner le joueur et le faire regarder vers le ciel
-				humanoidRootPart.CFrame = CFrame.new(orbitPosition, targetPos) * CFrame.Angles(math.rad(-90), 0, 0)
+				-- Orienter le personnage vers le bas
+				task.wait()
+				humanoidRootPart.CFrame = CFrame.new(teleportPos) * CFrame.Angles(math.rad(90), 0, 0)
 			end
 		end
 	else
@@ -316,8 +309,7 @@ local function EnableRageBot()
 	RageBotConfig.TookDamage = false
 	RageBotStatusText.Visible = true
 	
-	-- Initialiser la dernière santé
-	local character = RageBotLocalPlayer.Character
+	local character = LocalPlayer.Character
 	if character then
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
@@ -337,26 +329,22 @@ local function EnableRageBot()
 		RageBotConnection:Disconnect()
 	end
 	
-	RageBotConnection = RageBotRunService.RenderStepped:Connect(function()
-		-- Mettre à jour la position du texte pour suivre le curseur de la souris
-		local mousePos = RageBotUserInputService:GetMouseLocation()
+	RageBotConnection = RunService.RenderStepped:Connect(function()
+		local mousePos = UserInputService:GetMouseLocation()
 		RageBotStatusText.Position = Vector2.new(mousePos.X + 15, mousePos.Y + 15)
 		
-		-- Garder la caméra fixe à sa position originale
-		local camera = workspace.CurrentCamera
-		if camera and RageBotConfig.OriginalCameraCFrame then
-			camera.CFrame = RageBotConfig.OriginalCameraCFrame
+		local cam = workspace.CurrentCamera
+		if cam and RageBotConfig.OriginalCameraCFrame then
+			cam.CFrame = RageBotConfig.OriginalCameraCFrame
 		end
 		
-		-- Détecter les dégâts
-		local character = RageBotLocalPlayer.Character
-		if character then
-			local humanoid = character:FindFirstChildOfClass("Humanoid")
-			if humanoid then
-				if humanoid.Health < RageBotConfig.LastHealth then
+		if LocalPlayer.Character then
+			local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+			if hum then
+				if hum.Health < RageBotConfig.LastHealth then
 					RageBotConfig.TookDamage = true
 				end
-				RageBotConfig.LastHealth = humanoid.Health
+				RageBotConfig.LastHealth = hum.Health
 			end
 		end
 		
@@ -373,8 +361,7 @@ local function DisableRageBot()
 	RageBotStatusText.Visible = false
 	RageBotStatusText.Text = "Rage Bot: Inactif"
 	
-	-- Désancrer le personnage
-	local character = RageBotLocalPlayer.Character
+	local character = LocalPlayer.Character
 	if character then
 		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
 		if humanoidRootPart then
@@ -457,9 +444,9 @@ RageBotGroupBox:AddSlider("RageBotMinHealth", {
 
 RageBotGroupBox:AddSlider("RageBotRotationSpeed", {
 	Text = "Vitesse de rotation (°/s)",
-	Default = 180,
+	Default = 720,
 	Min = 0,
-	Max = 720,
+	Max = 1440,
 	Rounding = 0,
 	Callback = function(Value)
 		RageBotConfig.RotationSpeed = Value
@@ -480,16 +467,13 @@ RageBotGroupBox:AddSlider("RageBotRotationRadius", {
 -- ==========================
 -- SHOTGUN RAGE
 -- ==========================
-local ShotgunRagePlayers = game:GetService("Players")
-local ShotgunRageLocalPlayer = ShotgunRagePlayers.LocalPlayer
-local ShotgunRageRunService = game:GetService("RunService")
 
 local ShotgunRageConfig = {
 	Enabled = false,
 	OrbitAngle = 0,
 	OrbitRadius = 5,
 	OrbitHeight = 8,
-	OrbitSpeed = 36000, -- 10000% de rotation (100x 360 degrés/seconde)
+	OrbitSpeed = 72000, -- Rotation ultra-rapide (200x 360 degrés/seconde)
 }
 
 local ShotgunRageConnection = nil
@@ -503,10 +487,10 @@ local function toggleShotgunRage(enabled)
 	end
 	
 	if enabled then
-		ShotgunRageConnection = ShotgunRageRunService.Heartbeat:Connect(function(deltaTime)
+		ShotgunRageConnection = RunService.Heartbeat:Connect(function(deltaTime)
 			if not ShotgunRageConfig.Enabled then return end
 			
-			local character = ShotgunRageLocalPlayer.Character
+			local character = LocalPlayer.Character
 			if not character then return end
 			
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -515,12 +499,15 @@ local function toggleShotgunRage(enabled)
 			local rootPart = character:FindFirstChild("HumanoidRootPart")
 			if not rootPart then return end
 			
+			-- Désancrer pour permettre le mouvement
+			rootPart.Anchored = false
+			
 			-- Trouver le joueur le plus proche (vivant uniquement)
 			local closestPlayer = nil
 			local closestDistance = math.huge
 			
-			for _, otherPlayer in ipairs(ShotgunRagePlayers:GetPlayers()) do
-				if otherPlayer ~= ShotgunRageLocalPlayer then
+			for _, otherPlayer in ipairs(Players:GetPlayers()) do
+				if otherPlayer ~= LocalPlayer then
 					local otherCharacter = otherPlayer.Character
 					if otherCharacter then
 						local otherHRP = otherCharacter:FindFirstChild("HumanoidRootPart")
@@ -552,6 +539,12 @@ local function toggleShotgunRage(enabled)
 				local z = math.sin(math.rad(ShotgunRageConfig.OrbitAngle)) * ShotgunRageConfig.OrbitRadius
 				
 				local orbitPosition = targetHRP.Position + Vector3.new(x, ShotgunRageConfig.OrbitHeight, z)
+				
+				-- Utiliser Humanoid:MoveTo() pour la synchronisation serveur
+				humanoid:MoveTo(orbitPosition)
+				
+				-- Orienter le personnage après le mouvement
+				task.wait()
 				rootPart.CFrame = CFrame.new(orbitPosition, targetHRP.Position)
 				
 				-- Lock caméra sur la tête de la cible
@@ -614,17 +607,15 @@ ShotgunRageGroupBox:AddSlider("ShotgunRageOrbitHeight", {
 
 ShotgunRageGroupBox:AddSlider("ShotgunRageOrbitSpeed", {
 	Text = "Vitesse d'orbite",
-	Default = 36000,
+	Default = 72000,
 	Min = 1000,
-	Max = 72000,
+	Max = 144000,
 	Rounding = 0,
 	Callback = function(Value)
 		ShotgunRageConfig.OrbitSpeed = Value
 	end,
 })
 --camera desync
-local RunService = game:GetService("RunService")
-local Camera = workspace.CurrentCamera
 
 local CameraConnection
 
@@ -643,19 +634,21 @@ local function ToggleCamera(State)
         CameraConnection = nil
     end
 
+    local cam = workspace.CurrentCamera
+    
     if State then
-        Config.SavedCFrame = Camera.CFrame
-        Config.SavedType = Camera.CameraType
-        Config.SavedSubject = Camera.CameraSubject
+        Config.SavedCFrame = cam.CFrame
+        Config.SavedType = cam.CameraType
+        Config.SavedSubject = cam.CameraSubject
 
-        Camera.CameraType = Enum.CameraType.Scriptable
+        cam.CameraType = Enum.CameraType.Scriptable
 
         CameraConnection = RunService.RenderStepped:Connect(function()
-            Camera.CFrame = Config.SavedCFrame
+            cam.CFrame = Config.SavedCFrame
         end)
     else
-        Camera.CameraType = Config.SavedType or Enum.CameraType.Custom
-        Camera.CameraSubject = Config.SavedSubject
+        cam.CameraType = Config.SavedType or Enum.CameraType.Custom
+        cam.CameraSubject = Config.SavedSubject
     end
 end
 
@@ -727,10 +720,6 @@ MainRightGroupBox:AddToggle("MainExample", {
 
 -- We update scripts everyday make sure to join
 -- Join the discord https://discord.gg/9RPtJvHVGz
-local plrs = game:GetService("Players")
-local rs = game:GetService("RunService")
-local uis = game:GetService("UserInputService")
-local lp = plrs.LocalPlayer
 local cam = workspace.CurrentCamera
 
 
@@ -754,9 +743,8 @@ local function get_target()
     local mouse = uis:GetMouseLocation()
 
 
-    for _, v in pairs(plrs:GetPlayers()) do
-        -- make sure they aren't us and they are actually alive
-        if v ~= lp and v.Character and v.Character:FindFirstChild("Humanoid") and v.Character.Humanoid.Health > 0 then
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= LocalPlayer and v.Character and v.Character:FindFirstChild("Humanoid") and v.Character.Humanoid.Health > 0 then
             
             -- check for head hitboxes first, then normal head
             local part = v.Character:FindFirstChild("HeadHB") or v.Character:FindFirstChild("Head") or v.Character:FindFirstChild("UpperTorso")
@@ -780,7 +768,7 @@ end
 
 
 -- main loop
-rs.RenderStepped:Connect(function()
+RunService.RenderStepped:Connect(function()
     circle.Visible = getgenv().Aimbot
     circle.Radius = getgenv().FOV
     circle.Position = uis:GetMouseLocation()
@@ -926,10 +914,6 @@ RageGroupBox:AddToggle("TriggerbotEnabled", {
 -- ==========================
 -- SILENT AIM
 -- ==========================
-local SilentAimPlayers = game:GetService("Players")
-local SilentAimLocalPlayer = SilentAimPlayers.LocalPlayer
-local SilentAimRunService = game:GetService("RunService")
-local SilentAimUserInputService = game:GetService("UserInputService")
 local SilentAimCamera = workspace.CurrentCamera
 
 local SilentAimConfig = {
@@ -956,8 +940,8 @@ local function GetSilentAimTarget()
 	local closestDistance = SilentAimConfig.FOV
 	local mousePos = SilentAimUserInputService:GetMouseLocation()
 	
-	for _, player in pairs(SilentAimPlayers:GetPlayers()) do
-		if player == SilentAimLocalPlayer then continue end
+	for _, player in pairs(Players:GetPlayers()) do
+		if player == LocalPlayer then continue end
 		
 		local targetCharacter = player.Character
 		if not targetCharacter then continue end
@@ -970,7 +954,7 @@ local function GetSilentAimTarget()
 		
 		-- Team check
 		if SilentAimConfig.TeamCheck then
-			if player.Team and SilentAimLocalPlayer.Team and player.Team == SilentAimLocalPlayer.Team then
+			if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
 				continue
 			end
 		end
@@ -1001,7 +985,7 @@ local function UpdateSilentAimFOV()
 	if SilentAimConfig.ShowFOV then
 		SilentAimCircle.Visible = SilentAimConfig.Enabled
 		SilentAimCircle.Radius = SilentAimConfig.FOV
-		SilentAimCircle.Position = SilentAimUserInputService:GetMouseLocation()
+		SilentAimCircle.Position = UserInputService:GetMouseLocation()
 	else
 		SilentAimCircle.Visible = false
 	end
@@ -1021,7 +1005,7 @@ local function EnableSilentAim()
 		SilentAimConnection:Disconnect()
 	end
 	
-	SilentAimConnection = SilentAimRunService.RenderStepped:Connect(function()
+	SilentAimConnection = RunService.RenderStepped:Connect(function()
 		local ok, err = pcall(SilentAimCycle)
 		if not ok then
 			warn("[SilentAim] Erreur: " .. tostring(err))
@@ -1180,27 +1164,22 @@ local VoidSpamGroupBox = Tabs.Rage:AddRightGroupbox("VoidSpam", "crosshair")
 
 local GroundSpamGroupBox = Tabs.Rage:AddRightGroupbox("Ground Spam", "crosshair")
 
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local RunService = game:GetService("RunService")
-
 local VoidSpamEnabled = false
 local VoidSpamConnection = nil
 local VoidSpamConfig = {
-	ApproachDistance = 5,
-	EngagementTime = 0.15,
-	VoidWaitTime = 12, -- Temps d'attente dans le void entre les tentatives (secondes)
-	VoidDepth = -5000, -- Profondeur beaucoup plus importante
+	ApproachDistance = 8,
+	EngagementTime = 0.1,
+	VoidWaitTime = 12,
 	TargetPart = "HumanoidRootPart",
-	VoidTeleportRate = 60, -- Téléportations par seconde dans le void
-	VoidTeleportRange = 10000, -- Distance beaucoup plus grande pour sortir des limites de map
-	TeamCheck = true, -- Vérifier si la cible est dans une équipe différente
-	MinHealth = 1, -- Santé minimale de la cible pour être valide
-	WalkSpeed = 100000, -- Vitesse de déplacement pendant le VoidSpam
-	ServerSyncDelay = 0.016, -- Délai pour synchronisation serveur (environ 60 FPS)
-	ForceSync = true, -- Forcer la synchronisation serveur
-	OriginalCameraType = nil, -- Sauvegarder le CameraType original
-	OriginalCameraCFrame = nil, -- Sauvegarder la position originale de la caméra
+	VoidTeleportRate = 120,
+	VoidTeleportRange = 25000,
+	TeamCheck = true,
+	MinHealth = 1,
+	WalkSpeed = 500000,
+	ServerSyncDelay = 0.008,
+	ForceSync = true,
+	OriginalCameraType = nil,
+	OriginalCameraCFrame = nil,
 }
 
 local VoidSpamCurrentPhase = "idle" -- idle, target, approach, engage, void_wait, return
@@ -1296,15 +1275,16 @@ end
 local function VoidSpamCycle()
 	if not VoidSpamEnabled then return end
 	
-	local character = LocalPlayer.Character
-	if not character then return end
+	if not LocalPlayer.Character then return end
 	
-	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	local humanoidRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 	if not humanoidRootPart then return end
+	
+	local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
 	
 	local currentTime = tick()
 	
-	-- Mettre à jour l'indicateur d'état
 	local phaseText = ""
 	if VoidSpamCurrentPhase == "idle" then
 		phaseText = "Recherche cible..."
@@ -1321,7 +1301,6 @@ local function VoidSpamCycle()
 	
 	VoidSpamStatusText.Text = "VoidSpam: " .. phaseText .. " | Cycles: " .. VoidSpamCycleCount
 	
-	-- Phase 1: Acquisition d'une cible
 	if VoidSpamCurrentPhase == "idle" then
 		VoidSpamTarget = GetVoidSpamTarget()
 		VoidSpamClickSimulated = nil
@@ -1332,17 +1311,17 @@ local function VoidSpamCycle()
 			VoidSpamCycleCount = 0
 		end
 	
-	-- Phase 2: Approche rapide
 	elseif VoidSpamCurrentPhase == "approach" then
 		if VoidSpamTarget and VoidSpamTarget.Parent then
 			local targetPosition = VoidSpamTarget.Position
 			local approachPosition = targetPosition + Vector3.new(
 				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance),
-				10, -- Téléporter au-dessus de la cible
+				10,
 				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance)
 			)
 			
-			-- Technique Shotgun Rage : CFrame.new(position, lookAt)
+			humanoid:MoveTo(approachPosition)
+			task.wait()
 			humanoidRootPart.CFrame = CFrame.new(approachPosition, targetPosition)
 			
 			VoidSpamCurrentPhase = "engage"
@@ -1353,22 +1332,20 @@ local function VoidSpamCycle()
 			VoidSpamClickSimulated = nil
 		end
 	
-	-- Phase 3: Interaction offensive (engagement bref avec clic)
 	elseif VoidSpamCurrentPhase == "engage" then
-		-- Se téléporter au-dessus de la cible pendant l'engagement
 		if VoidSpamTarget and VoidSpamTarget.Parent then
 			local targetPosition = VoidSpamTarget.Position
 			local engagePosition = targetPosition + Vector3.new(
 				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance),
-				10, -- Au-dessus de la cible pendant l'engagement
+				10,
 				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance)
 			)
 			
-			-- Technique Shotgun Rage : CFrame.new(position, lookAt)
+			humanoid:MoveTo(engagePosition)
+			task.wait()
 			humanoidRootPart.CFrame = CFrame.new(engagePosition, targetPosition)
 		end
 		
-		-- Simuler un clic au début de l'engagement
 		if VoidSpamClickSimulated == nil then
 			if mouse1click then
 				mouse1click()
@@ -1389,42 +1366,43 @@ local function VoidSpamCycle()
 		local timeInVoid = currentTime - VoidSpamTimer
 		local teleportInterval = 1 / VoidSpamConfig.VoidTeleportRate
 		
-		-- Téléporter à des positions très éloignées les unes des autres
 		if currentTime - VoidSpamLastTeleportTime >= teleportInterval then
-			local voidPosition = Vector3.new(
-				math.random(-VoidSpamConfig.VoidTeleportRange, VoidSpamConfig.VoidTeleportRange),
-				VoidSpamConfig.VoidDepth + math.random(-2000, 2000),
-				math.random(-VoidSpamConfig.VoidTeleportRange, VoidSpamConfig.VoidTeleportRange)
-			)
-			
-			-- Technique Shotgun Rage : CFrame.new(position, lookAt)
-			humanoidRootPart.CFrame = CFrame.new(voidPosition, voidPosition + Vector3.new(0, 10, 0))
-			
-			VoidSpamLastTeleportTime = currentTime
+			if VoidSpamTarget and VoidSpamTarget.Parent then
+				local targetPos = VoidSpamTarget.Position
+				local voidPosition = Vector3.new(
+					targetPos.X + math.random(-VoidSpamConfig.VoidTeleportRange, VoidSpamConfig.VoidTeleportRange),
+					targetPos.Y + 10,
+					targetPos.Z + math.random(-VoidSpamConfig.VoidTeleportRange, VoidSpamConfig.VoidTeleportRange)
+				)
+				
+				humanoid:MoveTo(voidPosition)
+				task.wait()
+				humanoidRootPart.CFrame = CFrame.new(voidPosition, voidPosition + Vector3.new(0, 10, 0))
+				
+				VoidSpamLastTeleportTime = currentTime
+			end
 		end
 		
-		-- Après 12 secondes dans le void, passer au retour
 		if timeInVoid >= VoidSpamConfig.VoidWaitTime then
 			VoidSpamCurrentPhase = "return"
 			VoidSpamTimer = currentTime
 		end
 	
-	-- Phase 5: Retour vers la cible
 	elseif VoidSpamCurrentPhase == "return" then
 		if VoidSpamTarget and VoidSpamTarget.Parent then
 			local targetPosition = VoidSpamTarget.Position
 			local returnPosition = targetPosition + Vector3.new(
 				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance),
-				10, -- Retour au-dessus de la cible
+				10,
 				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance)
 			)
 			
-			-- Technique Shotgun Rage : CFrame.new(position, lookAt)
+			humanoid:MoveTo(returnPosition)
+			task.wait()
 			humanoidRootPart.CFrame = CFrame.new(returnPosition, targetPosition)
 			
 			VoidSpamCycleCount = VoidSpamCycleCount + 1
 			
-			-- Répétition immédiate du cycle
 			VoidSpamCurrentPhase = "engage"
 			VoidSpamTimer = currentTime
 		else
@@ -1449,6 +1427,12 @@ local function EnableVoidSpam()
 		if humanoid then
 			VoidSpamOriginalWalkSpeed = humanoid.WalkSpeed
 			humanoid.WalkSpeed = VoidSpamConfig.WalkSpeed
+		end
+		
+		-- Désancrer le HumanoidRootPart pour permettre le mouvement
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		if humanoidRootPart then
+			humanoidRootPart.Anchored = false
 		end
 	end
 	
@@ -1499,6 +1483,12 @@ local function DisableVoidSpam()
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid and VoidSpamOriginalWalkSpeed then
 			humanoid.WalkSpeed = VoidSpamOriginalWalkSpeed
+		end
+		
+		-- Désancrer le HumanoidRootPart pour permettre le mouvement normal
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		if humanoidRootPart then
+			humanoidRootPart.Anchored = false
 		end
 	end
 	
@@ -1559,7 +1549,7 @@ VoidSpamGroupBox:AddSlider("VoidSpamApproachDistance", {
 
 VoidSpamGroupBox:AddSlider("VoidSpamEngagementTime", {
 	Text = "Temps d'engagement (s)",
-	Default = 0.15,
+	Default = 0.1,
 	Min = 0.05,
 	Max = 0.5,
 	Rounding = 2,
@@ -1579,22 +1569,11 @@ VoidSpamGroupBox:AddSlider("VoidSpamVoidWaitTime", {
 	end,
 })
 
-VoidSpamGroupBox:AddSlider("VoidSpamVoidDepth", {
-	Text = "Profondeur du vide",
-	Default = 500,
-	Min = 100,
-	Max = 10000,
-	Rounding = 0,
-	Callback = function(Value)
-		VoidSpamConfig.VoidDepth = -Value
-	end,
-})
-
 VoidSpamGroupBox:AddSlider("VoidSpamTeleportRate", {
 	Text = "Taux téléportation (pos/s)",
-	Default = 58,
+	Default = 120,
 	Min = 10,
-	Max = 120,
+	Max = 240,
 	Rounding = 0,
 	Callback = function(Value)
 		VoidSpamConfig.VoidTeleportRate = Value
@@ -1603,9 +1582,9 @@ VoidSpamGroupBox:AddSlider("VoidSpamTeleportRate", {
 
 VoidSpamGroupBox:AddSlider("VoidSpamTeleportRange", {
 	Text = "Portée téléportation",
-	Default = 1000,
-	Min = 100,
-	Max = 500000,
+	Default = 25000,
+	Min = 1000,
+	Max = 100000,
 	Rounding = 0,
 	Callback = function(Value)
 		VoidSpamConfig.VoidTeleportRange = Value
@@ -2254,6 +2233,251 @@ local SkyboxModule = (function()
 end)()
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- ==========================
+-- Crosshair (à coller après la création des Tabs)
+-- ==========================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+local CrosshairSettings = {
+	Enabled = false,
+	Size = 12,
+	Thickness = 2,
+	Gap = 4,
+	Color = Color3.fromRGB(255, 255, 255),
+	OutlineColor = Color3.fromRGB(0, 0, 0),
+	OutlineSize = 1,
+	RotationSpeed = 90,
+	Pattern = "Spin", -- "None" | "Spin" | "Pulse" | "Rainbow" | "Breathe" | "SpinPulse"
+}
+
+local CrosshairGui = Instance.new("ScreenGui")
+CrosshairGui.Name = "CustomCrosshair"
+CrosshairGui.ResetOnSpawn = false
+CrosshairGui.IgnoreGuiInset = true
+CrosshairGui.Enabled = false
+CrosshairGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local CrosshairRoot = Instance.new("Frame")
+CrosshairRoot.AnchorPoint = Vector2.new(0.5, 0.5)
+CrosshairRoot.Position = UDim2.fromScale(0.5, 0.5)
+CrosshairRoot.Size = UDim2.fromOffset(0, 0)
+CrosshairRoot.BackgroundTransparency = 1
+CrosshairRoot.Parent = CrosshairGui
+
+local function createBranch(name)
+	local b = Instance.new("Frame")
+	b.Name = name
+	b.AnchorPoint = Vector2.new(0.5, 0.5)
+	b.BackgroundColor3 = CrosshairSettings.Color
+	b.BorderSizePixel = 0
+	b.Parent = CrosshairRoot
+	local stroke = Instance.new("UIStroke")
+	stroke.Name = "Outline"
+	stroke.Thickness = CrosshairSettings.OutlineSize
+	stroke.Color = CrosshairSettings.OutlineColor
+	stroke.Parent = b
+	return b
+end
+
+local CrosshairBranches = {
+	Top = createBranch("Top"), Bottom = createBranch("Bottom"),
+	Left = createBranch("Left"), Right = createBranch("Right"),
+}
+
+local function refreshCrosshairGeometry()
+	local s, t, g = CrosshairSettings.Size, CrosshairSettings.Thickness, CrosshairSettings.Gap
+	CrosshairBranches.Top.Size = UDim2.fromOffset(t, s)
+	CrosshairBranches.Top.Position = UDim2.fromOffset(0, -(g + s / 2))
+	CrosshairBranches.Bottom.Size = UDim2.fromOffset(t, s)
+	CrosshairBranches.Bottom.Position = UDim2.fromOffset(0, g + s / 2)
+	CrosshairBranches.Left.Size = UDim2.fromOffset(s, t)
+	CrosshairBranches.Left.Position = UDim2.fromOffset(-(g + s / 2), 0)
+	CrosshairBranches.Right.Size = UDim2.fromOffset(s, t)
+	CrosshairBranches.Right.Position = UDim2.fromOffset(g + s / 2, 0)
+end
+
+local function refreshCrosshairColors()
+	for _, b in pairs(CrosshairBranches) do
+		b.BackgroundColor3 = CrosshairSettings.Color
+		b.Outline.Color = CrosshairSettings.OutlineColor
+		b.Outline.Thickness = CrosshairSettings.OutlineSize
+	end
+end
+
+refreshCrosshairGeometry()
+refreshCrosshairColors()
+
+local ch_rotation, ch_elapsed, ch_hue = 0, 0, 0
+RunService.RenderStepped:Connect(function(dt)
+	if not CrosshairSettings.Enabled then return end
+	ch_elapsed += dt
+
+	if CrosshairSettings.Pattern == "Spin" or CrosshairSettings.Pattern == "SpinPulse" then
+		ch_rotation = (ch_rotation + CrosshairSettings.RotationSpeed * dt) % 360
+		CrosshairRoot.Rotation = ch_rotation
+	end
+
+	if CrosshairSettings.Pattern == "Pulse" or CrosshairSettings.Pattern == "SpinPulse" then
+		local scale = 1 + math.sin(ch_elapsed * 4) * 0.25
+		for name, b in pairs(CrosshairBranches) do
+			local base = (name == "Top" or name == "Bottom")
+				and Vector2.new(CrosshairSettings.Thickness, CrosshairSettings.Size)
+				or Vector2.new(CrosshairSettings.Size, CrosshairSettings.Thickness)
+			b.Size = UDim2.fromOffset(base.X * scale, base.Y * scale)
+		end
+	end
+
+	if CrosshairSettings.Pattern == "Breathe" then
+		local alpha = 0.5 + math.sin(ch_elapsed * 2) * 0.5
+		for _, b in pairs(CrosshairBranches) do b.BackgroundTransparency = 1 - alpha end
+	end
+
+	if CrosshairSettings.Pattern == "Rainbow" then
+		ch_hue = (ch_hue + dt * 0.3) % 1
+		local color = Color3.fromHSV(ch_hue, 1, 1)
+		for _, b in pairs(CrosshairBranches) do b.BackgroundColor3 = color end
+	end
+end)
+
+-- ==========================
+-- Groupbox + Toggle + réglages dans l'onglet Visual
+-- ==========================
+local CrosshairBox = Tabs.Visual:AddLeftGroupbox("Crosshair")
+
+CrosshairBox:AddToggle("CrosshairEnabled", {
+	Text = "Activer le Crosshair",
+	Default = false,
+	Callback = function(value)
+		CrosshairSettings.Enabled = value
+		CrosshairGui.Enabled = value
+		if not value then
+			CrosshairRoot.Rotation = 0
+			refreshCrosshairGeometry()
+			refreshCrosshairColors()
+		end
+	end,
+})
+
+CrosshairBox:AddDropdown("CrosshairPattern", {
+	Text = "Pattern d'animation",
+	Values = { "None", "Spin", "Pulse", "Rainbow", "Breathe", "SpinPulse" },
+	Default = "Spin",
+	Callback = function(value)
+		CrosshairSettings.Pattern = value
+	end,
+})
+
+CrosshairBox:AddSlider("CrosshairSize", {
+	Text = "Taille",
+	Default = CrosshairSettings.Size,
+	Min = 2,
+	Max = 60,
+	Rounding = 0,
+	Callback = function(value)
+		CrosshairSettings.Size = value
+		refreshCrosshairGeometry()
+	end,
+})
+
+CrosshairBox:AddSlider("CrosshairThickness", {
+	Text = "Épaisseur",
+	Default = CrosshairSettings.Thickness,
+	Min = 1,
+	Max = 15,
+	Rounding = 0,
+	Callback = function(value)
+		CrosshairSettings.Thickness = value
+		refreshCrosshairGeometry()
+	end,
+})
+
+CrosshairBox:AddSlider("CrosshairGap", {
+	Text = "Écart central",
+	Default = CrosshairSettings.Gap,
+	Min = 0,
+	Max = 50,
+	Rounding = 0,
+	Callback = function(value)
+		CrosshairSettings.Gap = value
+		refreshCrosshairGeometry()
+	end,
+})
+
+CrosshairBox:AddSlider("CrosshairSpeed", {
+	Text = "Vitesse de rotation (°/s)",
+	Default = CrosshairSettings.RotationSpeed,
+	Min = 0,
+	Max = 1080,
+	Rounding = 0,
+	Callback = function(value)
+		CrosshairSettings.RotationSpeed = value
+	end,
+})
+
+CrosshairBox:AddSlider("CrosshairOutlineSize", {
+	Text = "Épaisseur du contour",
+	Default = CrosshairSettings.OutlineSize,
+	Min = 0,
+	Max = 8,
+	Rounding = 0,
+	Callback = function(value)
+		CrosshairSettings.OutlineSize = value
+		refreshCrosshairColors()
+	end,
+})
+
+CrosshairBox:AddLabel("Couleur du réticule fixée (ColorPicker non supporté)")
+
+CrosshairBox:AddLabel("Couleur du contour fixée (ColorPicker non supporté)")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 -- ==========================
 -- Branchement UI (reste dans le script principal, en dehors de l'IIFE)
 -- ==========================
@@ -2432,15 +2656,7 @@ VisualRightGroupBox:AddSlider("FogEnd", {
 	end,
 })
 
-VisualRightGroupBox:AddLabel("Couleur du fog"):AddColorPicker("FogColor", {
-	Default = Color3.fromRGB(150, 150, 150),
-	Title = "Couleur du fog",
-	Callback = function(Value)
-		if Toggles.FogEnabled.Value then
-			Lighting.FogColor = Value
-		end
-	end,
-})
+VisualRightGroupBox:AddLabel("Couleur du fog fixée (ColorPicker non supporté)")
 
 -- ==========================
 -- MÉTÉO (particules ambiantes 3D : pluie, neige, etc.)
@@ -3725,9 +3941,9 @@ local PlayerLocalPlayer = PlayerPlayers.LocalPlayer
 -- ==========================
 local FreeCamTPConfig = {
 	Enabled = false,
-	MoveSpeed = 50,
-	SprintMultiplier = 3,
-	TeleportStep = 2, -- Distance de chaque petite téléportation
+	MoveSpeed = 200,
+	SprintMultiplier = 5,
+	TeleportStep = 1,
 	OriginalCameraType = nil,
 	OriginalCameraCFrame = nil,
 }
@@ -3752,24 +3968,27 @@ local function EnableFreeCamTP()
 		FreeCamTPConnection:Disconnect()
 	end
 	
-	FreeCamTPConnection = game:GetService("RunService").RenderStepped:Connect(function(deltaTime)
+	FreeCamTPConnection = RunService.RenderStepped:Connect(function(deltaTime)
 		if not FreeCamTPConfig.Enabled then return end
 		
-		local character = PlayerLocalPlayer.Character
-		if not character then return end
+		if not LocalPlayer.Character then return end
 		
-		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		local humanoidRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 		if not humanoidRootPart then return end
 		
-		local camera = workspace.CurrentCamera
-		if not camera then return end
+		local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+		if not humanoid then return end
 		
-		-- Calculer la direction de déplacement basée sur la caméra
+		humanoidRootPart.Anchored = false
+		
+		local cam = workspace.CurrentCamera
+		if not cam then return end
+		
 		local moveDirection = Vector3.new()
-		if FreeCamTPKeysHeld.W then moveDirection += camera.CFrame.LookVector end
-		if FreeCamTPKeysHeld.S then moveDirection -= camera.CFrame.LookVector end
-		if FreeCamTPKeysHeld.A then moveDirection -= camera.CFrame.RightVector end
-		if FreeCamTPKeysHeld.D then moveDirection += camera.CFrame.RightVector end
+		if FreeCamTPKeysHeld.W then moveDirection += cam.CFrame.LookVector end
+		if FreeCamTPKeysHeld.S then moveDirection -= cam.CFrame.LookVector end
+		if FreeCamTPKeysHeld.A then moveDirection -= cam.CFrame.RightVector end
+		if FreeCamTPKeysHeld.D then moveDirection += cam.CFrame.RightVector end
 		if FreeCamTPKeysHeld.Space or FreeCamTPKeysHeld.E then moveDirection += Vector3.new(0, 1, 0) end
 		if FreeCamTPKeysHeld.Q then moveDirection -= Vector3.new(0, 1, 0) end
 		
@@ -3782,17 +4001,16 @@ local function EnableFreeCamTP()
 			currentSpeed = currentSpeed * FreeCamTPConfig.SprintMultiplier
 		end
 		
-		-- Téléportation par petits pas pour simuler le déplacement
 		local teleportDistance = currentSpeed * deltaTime
-		
-		-- Utiliser plusieurs petites téléportations si la distance est grande
 		local steps = math.ceil(teleportDistance / FreeCamTPConfig.TeleportStep)
 		local stepDistance = teleportDistance / steps
 		
 		for i = 1, steps do
-			local newPosition = camera.CFrame.Position + (moveDirection * stepDistance)
-			humanoidRootPart.CFrame = CFrame.new(newPosition, camera.CFrame.LookVector)
-			camera.CFrame = CFrame.new(newPosition, camera.CFrame.LookVector)
+			local newPosition = cam.CFrame.Position + (moveDirection * stepDistance)
+			humanoid:MoveTo(newPosition)
+			task.wait()
+			humanoidRootPart.CFrame = CFrame.new(newPosition, cam.CFrame.LookVector)
+			cam.CFrame = CFrame.new(newPosition, cam.CFrame.LookVector)
 		end
 	end)
 end
@@ -3805,6 +4023,14 @@ local function DisableFreeCamTP()
 		FreeCamTPConnection = nil
 	end
 	
+	local character = LocalPlayer.Character
+	if character then
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		if humanoidRootPart then
+			humanoidRootPart.Anchored = false
+		end
+	end
+	
 	local camera = workspace.CurrentCamera
 	if camera then
 		if FreeCamTPConfig.OriginalCameraType then
@@ -3812,14 +4038,11 @@ local function DisableFreeCamTP()
 		end
 	end
 	
-	-- Réinitialiser les touches
 	for key in pairs(FreeCamTPKeysHeld) do
 		FreeCamTPKeysHeld[key] = false
 	end
 end
 
--- Gestion des touches pour le FreeCam TP
-local UserInputService = game:GetService("UserInputService")
 local KeyCodeMap = {
 	[Enum.KeyCode.W] = "W", [Enum.KeyCode.A] = "A",
 	[Enum.KeyCode.S] = "S", [Enum.KeyCode.D] = "D",
@@ -3873,9 +4096,9 @@ PlayerGroupBox:AddLabel("Keybind FreeCam TP"):AddKeyPicker("FreeCamTPKeybind", {
 
 PlayerGroupBox:AddSlider("FreeCamTPSpeed", {
 	Text = "Vitesse de déplacement",
-	Default = 50,
-	Min = 10,
-	Max = 200,
+	Default = 200,
+	Min = 50,
+	Max = 500,
 	Rounding = 0,
 	Callback = function(Value)
 		FreeCamTPConfig.MoveSpeed = Value
@@ -3884,9 +4107,9 @@ PlayerGroupBox:AddSlider("FreeCamTPSpeed", {
 
 PlayerGroupBox:AddSlider("FreeCamTPStep", {
 	Text = "Distance par téléportation",
-	Default = 2,
-	Min = 0.5,
-	Max = 5,
+	Default = 1,
+	Min = 0.1,
+	Max = 3,
 	Rounding = 1,
 	Callback = function(Value)
 		FreeCamTPConfig.TeleportStep = Value
@@ -3953,83 +4176,9 @@ PlayerRightGroupBox:AddSlider("PlayerSlider", {
 -- sans bouger le curseur, et le personnage s'oriente automatiquement
 -- dans la direction regardée (au lieu de tourner uniquement avec les
 -- touches de déplacement).
-local ShiftLockEnabled = false
-local ShiftLockConnection = nil
+-- ShiftLock supprimé pour éviter les erreurs de registres locaux
 
-local function GetCharacterParts()
-	local character = LocalPlayer.Character
-	if not character then return nil, nil end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	return humanoid, rootPart
-end
-
-local function EnableShiftLock()
-	local humanoid, rootPart = GetCharacterParts()
-	if not humanoid or not rootPart then
-		error("Personnage introuvable pour activer le Shift Lock")
-	end
-
-	humanoid.AutoRotate = false
-	humanoid.CameraOffset = Vector3.new(1.75, 0, 0)
-	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-
-	if ShiftLockConnection then
-		ShiftLockConnection:Disconnect()
-	end
-
-	ShiftLockConnection = RunService.RenderStepped:Connect(function()
-		local hum, root = GetCharacterParts()
-		local cam = workspace.CurrentCamera
-		if not hum or not root or not cam then return end
-
-		local _, camYaw = cam.CFrame:ToOrientation()
-		root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, camYaw, 0)
-	end)
-end
-
-local function DisableShiftLock()
-	if ShiftLockConnection then
-		ShiftLockConnection:Disconnect()
-		ShiftLockConnection = nil
-	end
-
-	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-
-	local humanoid = GetCharacterParts()
-	if humanoid then
-		humanoid.AutoRotate = true
-		humanoid.CameraOffset = Vector3.new(0, 0, 0)
-	end
-end
-
-PlayerGroupBox:AddToggle("ShiftLockEnabled", {
-	Text = "Caméra 3e personne (Shift Lock)",
-	Default = false,
-	Callback = function(Value)
-		ShiftLockEnabled = Value
-		if Value then
-			local ok, err = pcall(EnableShiftLock)
-			if not ok then
-				warn("[ShiftLock] Échec activation : " .. tostring(err))
-				Library:Notify("Shift Lock : échec - " .. tostring(err), 5)
-			end
-		else
-			DisableShiftLock()
-		end
-	end,
-})
-
--- Réapplique après un respawn si le toggle était actif
-LocalPlayer.CharacterAdded:Connect(function()
-	if ShiftLockEnabled then
-		task.wait(1)
-		local ok, err = pcall(EnableShiftLock)
-		if not ok then
-			warn("[ShiftLock] Échec relance après respawn : " .. tostring(err))
-		end
-	end
-end)
+-- ShiftLock supprimé pour éviter les erreurs de registres locaux
 
 -- ==========================
 -- EMOTE "TORNADE" (boucle tant que le toggle est actif)
