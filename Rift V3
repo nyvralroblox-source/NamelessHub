@@ -1,0 +1,5127 @@
+--[[
+    Rift Counter BETA
+    UI Library : Obsidian UI (https://github.com/deividcomsono/Obsidian)
+    Onglets    : Home - Counter - Rage - Visual - Player - Config
+    SaveManager + ThemeManager par défaut d'Obsidian
+--]]
+
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Options = Library.Options
+local Toggles = Library.Toggles
+
+Library.ForceCheckbox = false -- Forces AddToggle to AddCheckbox
+Library.ShowToggleFrameInKeybinds = true -- Rend les keybinds de toggle utilisables depuis le menu Keybinds (utile sur mobile)
+
+--// Fenêtre principale
+local Window = Library:CreateWindow({
+    Icon = "moon",
+    Title = "Rift Counter",
+    Footer = "version: beta",
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+    Center = true,
+    AutoShow = true,
+})
+
+--// Onglets
+local Tabs = {
+    Home    = Window:AddTab("Home", "globe"),
+    Counter = Window:AddTab("Counter", "shield"),
+    Rage    = Window:AddTab("Rage", "flame"),
+    Visual  = Window:AddTab("Visual", "eye"),
+    Player  = Window:AddTab("Player", "user"),
+    SkinChanger = Window:AddTab("Skin Changer", "key"),
+    Config  = Window:AddTab("Config", "settings"),
+}
+
+--=========================================================
+-- SERVICES
+--=========================================================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local LocalPlayer = Players.LocalPlayer
+
+--=========================================================
+-- HOME
+--=========================================================
+local HomeGroupBox = Tabs.Home:AddGroupbox({
+    Side = "Left",
+    Name = "Bienvenue",
+})
+
+HomeGroupBox:AddLabel("Rift Counter BETA", true)
+HomeGroupBox:AddLabel("Menu chargé avec succès.", true)
+HomeGroupBox:AddButton({
+    Text = "Copier le lien Discord",
+    Func = function()
+        setclipboard("https://discord.gg/tonlien")
+        Library:Notify({
+            Title = "Rift Counter",
+            Description = "Lien Discord copié dans le presse-papier.",
+            Time = 3,
+        })
+    end,
+})
+
+local HomeInfoBox = Tabs.Home:AddGroupbox({
+    Side = "Right",
+    Name = "Informations",
+})
+HomeInfoBox:AddLabel("Version : BETA", true)
+HomeInfoBox:AddLabel("Statut : Stable", true)
+HomeInfoBox:AddLabel("Lifeitme Key : 9,99 €", true)
+
+--// Orientation vers le joueur le plus proche
+
+local function GetNearestPlayer()
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+
+    local nearest, nearestDist = nil, math.huge
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local theirRoot = plr.Character:FindFirstChild("HumanoidRootPart")
+            if theirRoot then
+                local dist = (theirRoot.Position - myRoot.Position).Magnitude
+                if dist < nearestDist then
+                    nearest = theirRoot
+                    nearestDist = dist
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+local HomeOrientBox = Tabs.Home:AddGroupbox({
+    Side = "Left",
+    Name = "Orientation",
+})
+
+local SavedCameraType = nil
+local OrientFeatureEnabled = false
+local LeftMouseHeld = false
+local WasActiveLastFrame = false
+local OrientHeartbeatConnection = nil
+
+local function GetTargetHead(target)
+    -- "target" est le HumanoidRootPart du joueur le plus proche ;
+    -- on récupère sa tête pour que la caméra vise précisément la tête
+    local char = target.Parent
+    return char and char:FindFirstChild("Head")
+end
+
+HomeOrientBox:AddToggle("FaceNearestPlayer", {
+    Text = "Caméra vers le joueur le plus proche (maintenir clic gauche)",
+    Default = false,
+    Callback = function(Value)
+        OrientFeatureEnabled = Value
+    end,
+})
+
+-- Détection du clic gauche maintenu (indépendant du toggle, juste un état)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        LeftMouseHeld = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        LeftMouseHeld = false
+    end
+end)
+
+-- Boucle unique, toujours connectée, qui n'agit que si le toggle est activé
+-- ET que le clic gauche est maintenu
+OrientHeartbeatConnection = RunService.Heartbeat:Connect(function()
+    local camera = workspace.CurrentCamera
+    local isActive = OrientFeatureEnabled and LeftMouseHeld
+
+    if isActive and not WasActiveLastFrame then
+        -- On vient d'activer : caméra en mode Scriptable
+        SavedCameraType = camera.CameraType
+        camera.CameraType = Enum.CameraType.Scriptable
+    elseif not isActive and WasActiveLastFrame then
+        -- On vient de désactiver (relâché le clic ou toggle off) :
+        -- on restaure la caméra normale contrôlable à la souris
+        if SavedCameraType then
+            camera.CameraType = SavedCameraType
+            SavedCameraType = nil
+        else
+            camera.CameraType = Enum.CameraType.Custom
+        end
+    end
+
+    WasActiveLastFrame = isActive
+
+    if not isActive then return end
+
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return end
+
+    local target = GetNearestPlayer()
+    if not target then return end
+
+    -- On ne touche plus au CFrame du personnage : seule la caméra est
+    -- orientée. Ainsi tes touches (ZQSD/WASD) et le déplacement du
+    -- personnage restent 100% normaux et ne sont jamais perturbés.
+    local myHead = myChar:FindFirstChild("Head")
+    local targetHead = GetTargetHead(target)
+    local camPos = myHead and myHead.Position or (myRoot.Position + Vector3.new(0, 2, 0))
+    local lookAtPos = targetHead and targetHead.Position or target.Position
+
+    camera.CFrame = CFrame.lookAt(camPos, lookAtPos)
+end)
+
+--=========================================================
+-- COUNTER
+--=========================================================
+local CounterGroupBox = Tabs.Counter:AddGroupbox({
+    Side = "Left",
+    Name = "Counter Settings",
+})
+
+CounterGroupBox:AddToggle("CounterEnabled", {
+    Text = "Activer le Counter",
+    Default = false,
+    Callback = function(Value)
+        print("Counter activé :", Value)
+    end,
+}):AddKeyPicker("CounterKeybind", {
+    Default = "None",
+    SyncToggleState = true, -- la touche suit/contrôle l'état du toggle
+    Mode = "Toggle",
+    Text = "Keybind Counter",
+})
+
+--// Intercalaires (Tabbox) : Kiciahook / UE / Sleepy
+local CounterTabbox = Tabs.Counter:AddRightTabbox()
+
+local KiciahookTab = CounterTabbox:AddTab("Kiciahook")
+
+-- ==========================
+-- VOIDSPAM MODULE
+-- ==========================
+local VoidSpamEnabled = false
+local VoidSpamConnection = nil
+local VoidSpamConfig = {
+	ApproachDistance = 8,
+	EngagementTime = 0.1,
+	VoidWaitTime = 12,
+	TargetPart = "HumanoidRootPart",
+	VoidTeleportRate = 120,
+	VoidTeleportRange = 25000,
+	TeamCheck = true,
+	MinHealth = 1,
+	WalkSpeed = 500000,
+	ServerSyncDelay = 0.008,
+	ForceSync = true,
+	OriginalCameraType = nil,
+	OriginalCameraCFrame = nil,
+}
+
+local VoidSpamCurrentPhase = "idle" -- idle, target, approach, engage, void_wait, return
+local VoidSpamTarget = nil
+local VoidSpamTimer = 0
+local VoidSpamLastPosition = nil
+local VoidSpamLastTeleportTime = 0
+local VoidSpamCycleCount = 0
+local VoidSpamClickSimulated = nil
+local VoidSpamOriginalWalkSpeed = nil
+
+-- Indicateur d'état en bas de l'écran
+local VoidSpamStatusText = Drawing.new("Text")
+VoidSpamStatusText.Visible = false
+VoidSpamStatusText.Text = "VoidSpam: Inactif"
+VoidSpamStatusText.Size = 30
+VoidSpamStatusText.Color = Color3.fromRGB(255, 255, 255)
+VoidSpamStatusText.Outline = true
+VoidSpamStatusText.OutlineColor = Color3.fromRGB(0, 0, 0)
+VoidSpamStatusText.Center = true
+VoidSpamStatusText.Position = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y - 30)
+
+-- Mettre à jour la position quand la taille de l'écran change
+workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+	VoidSpamStatusText.Position = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y - 30)
+end)
+
+-- Fonction pour forcer la synchronisation serveur
+local function ForceServerSync(character, targetPosition)
+	if not character then return end
+	
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return end
+	
+	-- Technique Shotgun Rage : CFrame.new(position, lookAt)
+	if VoidSpamConfig.ForceSync then
+		if targetPosition then
+			humanoidRootPart.CFrame = CFrame.new(targetPosition, targetPosition + Vector3.new(0, 10, 0))
+		end
+		
+		-- Reset basique des vélocités
+		humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+		humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+	end
+end
+
+local function GetVoidSpamTarget()
+	local target = nil
+	local closestDistance = 100000
+	local character = LocalPlayer.Character
+	
+	if not character then return nil end
+	
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return nil end
+	
+	for _, player in pairs(Players:GetPlayers()) do
+		if player == LocalPlayer then continue end
+		
+		local targetCharacter = player.Character
+		if not targetCharacter then continue end
+		
+		local humanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+		if not humanoid or humanoid.Health <= 0 then continue end
+		
+		-- Life check : vérifier que la cible a assez de santé
+		if humanoid.Health < VoidSpamConfig.MinHealth then continue end
+		
+		-- Team check : vérifier que la cible n'est pas dans la même équipe
+		if VoidSpamConfig.TeamCheck then
+			if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+				continue
+			end
+		end
+		
+		local targetPart = targetCharacter:FindFirstChild(VoidSpamConfig.TargetPart)
+		if not targetPart then
+			targetPart = targetCharacter:FindFirstChild("HumanoidRootPart")
+		end
+		if not targetPart then continue end
+		
+		local distance = (targetPart.Position - humanoidRootPart.Position).Magnitude
+		
+		if distance < closestDistance then
+			closestDistance = distance
+			target = targetPart
+		end
+	end
+	
+	return target
+end
+
+local function VoidSpamCycle()
+	if not VoidSpamEnabled then return end
+	
+	if not LocalPlayer.Character then return end
+	
+	local humanoidRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return end
+	
+	local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+	
+	local currentTime = tick()
+	
+	local phaseText = ""
+	if VoidSpamCurrentPhase == "idle" then
+		phaseText = "Recherche cible..."
+	elseif VoidSpamCurrentPhase == "approach" then
+		phaseText = "Approche"
+	elseif VoidSpamCurrentPhase == "engage" then
+		phaseText = "Engagement"
+	elseif VoidSpamCurrentPhase == "void_wait" then
+		local timeRemaining = math.ceil(VoidSpamConfig.VoidWaitTime - (currentTime - VoidSpamTimer))
+		phaseText = "Void (" .. timeRemaining .. "s)"
+	elseif VoidSpamCurrentPhase == "return" then
+		phaseText = "Retour"
+	end
+	
+	VoidSpamStatusText.Text = "VoidSpam: " .. phaseText .. " | Cycles: " .. VoidSpamCycleCount
+	
+	if VoidSpamCurrentPhase == "idle" then
+		VoidSpamTarget = GetVoidSpamTarget()
+		VoidSpamClickSimulated = nil
+		
+		if VoidSpamTarget then
+			VoidSpamCurrentPhase = "approach"
+			VoidSpamTimer = currentTime
+			VoidSpamCycleCount = 0
+		end
+	
+	elseif VoidSpamCurrentPhase == "approach" then
+		if VoidSpamTarget and VoidSpamTarget.Parent then
+			local targetPosition = VoidSpamTarget.Position
+			local approachPosition = targetPosition + Vector3.new(
+				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance),
+				10,
+				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance)
+			)
+			
+			humanoid:MoveTo(approachPosition)
+			task.wait()
+			humanoidRootPart.CFrame = CFrame.new(approachPosition, targetPosition)
+			
+			VoidSpamCurrentPhase = "engage"
+			VoidSpamTimer = currentTime
+			VoidSpamClickSimulated = nil
+		else
+			VoidSpamCurrentPhase = "idle"
+			VoidSpamClickSimulated = nil
+		end
+	
+	elseif VoidSpamCurrentPhase == "engage" then
+		if VoidSpamTarget and VoidSpamTarget.Parent then
+			local targetPosition = VoidSpamTarget.Position
+			local engagePosition = targetPosition + Vector3.new(
+				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance),
+				10,
+				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance)
+			)
+			
+			humanoid:MoveTo(engagePosition)
+			task.wait()
+			humanoidRootPart.CFrame = CFrame.new(engagePosition, targetPosition)
+		end
+		
+		if VoidSpamClickSimulated == nil then
+			if mouse1click then
+				mouse1click()
+			end
+			VoidSpamClickSimulated = true
+		end
+		
+		if currentTime - VoidSpamTimer >= VoidSpamConfig.EngagementTime then
+			VoidSpamLastPosition = humanoidRootPart.Position
+			VoidSpamCurrentPhase = "void_wait"
+			VoidSpamTimer = currentTime
+			VoidSpamLastTeleportTime = currentTime
+			VoidSpamClickSimulated = nil
+		end
+	
+	-- Phase 4: Attente dans le void (12 secondes avec téléportations ultra-rapides)
+	elseif VoidSpamCurrentPhase == "void_wait" then
+		local timeInVoid = currentTime - VoidSpamTimer
+		local teleportInterval = 1 / VoidSpamConfig.VoidTeleportRate
+		
+		if currentTime - VoidSpamLastTeleportTime >= teleportInterval then
+			if VoidSpamTarget and VoidSpamTarget.Parent then
+				local targetPos = VoidSpamTarget.Position
+				local voidPosition = Vector3.new(
+					targetPos.X + math.random(-VoidSpamConfig.VoidTeleportRange, VoidSpamConfig.VoidTeleportRange),
+					targetPos.Y + 10,
+					targetPos.Z + math.random(-VoidSpamConfig.VoidTeleportRange, VoidSpamConfig.VoidTeleportRange)
+				)
+				
+				humanoid:MoveTo(voidPosition)
+				task.wait()
+				humanoidRootPart.CFrame = CFrame.new(voidPosition, voidPosition + Vector3.new(0, 10, 0))
+				
+				VoidSpamLastTeleportTime = currentTime
+			end
+		end
+		
+		if timeInVoid >= VoidSpamConfig.VoidWaitTime then
+			VoidSpamCurrentPhase = "return"
+			VoidSpamTimer = currentTime
+		end
+	
+	elseif VoidSpamCurrentPhase == "return" then
+		if VoidSpamTarget and VoidSpamTarget.Parent then
+			local targetPosition = VoidSpamTarget.Position
+			local returnPosition = targetPosition + Vector3.new(
+				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance),
+				10,
+				math.random(-VoidSpamConfig.ApproachDistance, VoidSpamConfig.ApproachDistance)
+			)
+			
+			humanoid:MoveTo(returnPosition)
+			task.wait()
+			humanoidRootPart.CFrame = CFrame.new(returnPosition, targetPosition)
+			
+			VoidSpamCycleCount = VoidSpamCycleCount + 1
+			
+			VoidSpamCurrentPhase = "engage"
+			VoidSpamTimer = currentTime
+		else
+			VoidSpamCurrentPhase = "idle"
+		end
+	end
+end
+
+local function EnableVoidSpam()
+	VoidSpamEnabled = true
+	VoidSpamCurrentPhase = "idle"
+	VoidSpamTarget = nil
+	VoidSpamCycleCount = 0
+	
+	-- Afficher l'indicateur
+	VoidSpamStatusText.Visible = true
+	
+	-- Sauvegarder et appliquer la vitesse de déplacement
+	local character = LocalPlayer.Character
+	if character then
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			VoidSpamOriginalWalkSpeed = humanoid.WalkSpeed
+			humanoid.WalkSpeed = VoidSpamConfig.WalkSpeed
+		end
+		
+		-- Désancrer le HumanoidRootPart pour permettre le mouvement
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		if humanoidRootPart then
+			humanoidRootPart.Anchored = false
+		end
+	end
+	
+	-- Sauvegarder et désynchroniser la caméra
+	local camera = workspace.CurrentCamera
+	if camera then
+		VoidSpamConfig.OriginalCameraType = camera.CameraType
+		VoidSpamConfig.OriginalCameraCFrame = camera.CFrame
+		camera.CameraType = Enum.CameraType.Scriptable -- Mode scriptable pour contrôle total
+	end
+	
+	if VoidSpamConnection then
+		VoidSpamConnection:Disconnect()
+	end
+	
+	VoidSpamConnection = RunService.RenderStepped:Connect(function()
+		-- Mettre à jour la position de l'indicateur
+		local camera = workspace.CurrentCamera
+		if camera then
+			VoidSpamStatusText.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y - 30)
+		end
+		
+		-- Garder la caméra fixe à sa position originale
+		if camera and VoidSpamConfig.OriginalCameraCFrame then
+			camera.CFrame = VoidSpamConfig.OriginalCameraCFrame
+		end
+		
+		local ok, err = pcall(VoidSpamCycle)
+		if not ok then
+			warn("[VoidSpam] Erreur: " .. tostring(err))
+		end
+	end)
+end
+
+local function DisableVoidSpam()
+	VoidSpamEnabled = false
+	VoidSpamCurrentPhase = "idle"
+	VoidSpamTarget = nil
+	VoidSpamCycleCount = 0
+	
+	-- Cacher l'indicateur
+	VoidSpamStatusText.Visible = false
+	VoidSpamStatusText.Text = "VoidSpam: Inactif"
+	
+	-- Restaurer la vitesse de déplacement originale
+	local character = LocalPlayer.Character
+	if character then
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid and VoidSpamOriginalWalkSpeed then
+			humanoid.WalkSpeed = VoidSpamOriginalWalkSpeed
+		end
+		
+		-- Désancrer le HumanoidRootPart pour permettre le mouvement normal
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		if humanoidRootPart then
+			humanoidRootPart.Anchored = false
+		end
+	end
+	
+	-- Restaurer la caméra
+	local camera = workspace.CurrentCamera
+	if camera then
+		if VoidSpamConfig.OriginalCameraType then
+			camera.CameraType = VoidSpamConfig.OriginalCameraType
+		end
+	end
+	
+	if VoidSpamConnection then
+		VoidSpamConnection:Disconnect()
+		VoidSpamConnection = nil
+	end
+end
+
+KiciahookTab:AddToggle("VoidSpamEnabled", {
+	Text = "Activer VoidSpam",
+	Default = false,
+	Callback = function(Value)
+		if Value then
+			EnableVoidSpam()
+		else
+			DisableVoidSpam()
+		end
+	end,
+}):AddKeyPicker("VoidSpamKeybind", {
+	Default = "None",
+	SyncToggleState = true,
+	Mode = "Toggle",
+	Text = "Keybind VoidSpam",
+})
+
+KiciahookTab:AddSlider("VoidSpamApproachDistance", {
+	Text = "Distance d'approche",
+	Default = 5,
+	Min = 1,
+	Max = 15,
+	Rounding = 0,
+	Callback = function(Value)
+		VoidSpamConfig.ApproachDistance = Value
+	end,
+})
+
+KiciahookTab:AddSlider("VoidSpamEngagementTime", {
+	Text = "Temps d'engagement (s)",
+	Default = 0.1,
+	Min = 0.05,
+	Max = 0.5,
+	Rounding = 2,
+	Callback = function(Value)
+		VoidSpamConfig.EngagementTime = Value
+	end,
+})
+
+KiciahookTab:AddSlider("VoidSpamVoidWaitTime", {
+	Text = "Temps d'attente vide (s)",
+	Default = 12,
+	Min = 1,
+	Max = 30,
+	Rounding = 0,
+	Callback = function(Value)
+		VoidSpamConfig.VoidWaitTime = Value
+	end,
+})
+
+KiciahookTab:AddSlider("VoidSpamTeleportRate", {
+	Text = "Taux téléportation (pos/s)",
+	Default = 120,
+	Min = 10,
+	Max = 240,
+	Rounding = 0,
+	Callback = function(Value)
+		VoidSpamConfig.VoidTeleportRate = Value
+	end,
+})
+
+KiciahookTab:AddSlider("VoidSpamTeleportRange", {
+	Text = "Portée téléportation",
+	Default = 25000,
+	Min = 1000,
+	Max = 100000,
+	Rounding = 0,
+	Callback = function(Value)
+		VoidSpamConfig.VoidTeleportRange = Value
+	end,
+})
+
+KiciahookTab:AddDropdown("VoidSpamTargetPart", {
+	Values = {"HumanoidRootPart", "Head", "UpperTorso", "LowerTorso"},
+	Default = "HumanoidRootPart",
+	Text = "Partie ciblée",
+	Callback = function(Value)
+		VoidSpamConfig.TargetPart = Value
+	end,
+})
+
+KiciahookTab:AddToggle("VoidSpamTeamCheck", {
+	Text = "Team Check",
+	Default = true,
+	Callback = function(Value)
+		VoidSpamConfig.TeamCheck = Value
+	end,
+})
+
+KiciahookTab:AddSlider("VoidSpamMinHealth", {
+	Text = "Santé minimale cible",
+	Default = 1,
+	Min = 1,
+	Max = 150,
+	Rounding = 0,
+	Callback = function(Value)
+		VoidSpamConfig.MinHealth = Value
+	end,
+})
+
+KiciahookTab:AddSlider("VoidSpamWalkSpeed", {
+	Text = "Vitesse de déplacement",
+	Default = 16,
+	Min = 1,
+	Max = 1000,
+	Rounding = 0,
+	Callback = function(Value)
+		VoidSpamConfig.WalkSpeed = Value
+		-- Appliquer immédiatement si VoidSpam est actif
+		if VoidSpamEnabled then
+			local character = LocalPlayer.Character
+			if character then
+				local humanoid = character:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					humanoid.WalkSpeed = Value
+				end
+			end
+		end
+	end,
+})
+
+KiciahookTab:AddDivider()
+
+KiciahookTab:AddToggle("VoidSpamForceSync", {
+	Text = "Forcer synchro serveur",
+	Default = true,
+	Callback = function(Value)
+		VoidSpamConfig.ForceSync = Value
+	end,
+})
+
+KiciahookTab:AddSlider("VoidSpamServerSyncDelay", {
+	Text = "Délai synchro serveur (s)",
+	Default = 0.016,
+	Min = 0.001,
+	Max = 0.1,
+	Rounding = 3,
+	Callback = function(Value)
+		VoidSpamConfig.ServerSyncDelay = Value
+	end,
+})
+
+local UETab = CounterTabbox:AddTab("UE")
+
+
+
+
+
+
+
+
+
+
+
+local VisualRightGroupBox = Tabs.Visual:AddLeftGroupbox("Mods Player")
+
+VisualRightGroupBox:AddButton("Spoof VR", function()
+    local ReplicatedStorage = game:GetService('ReplicatedStorage')
+	ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("VR") -- "Touch", "Gamepad", "MouseKeyboard"
+end)
+
+VisualRightGroupBox:AddButton("Spoof PC", function()
+    local ReplicatedStorage = game:GetService('ReplicatedStorage')
+	ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("MouseKeyboard") -- "Touch", "Gamepad", "MouseKeyboard"
+end)
+
+VisualRightGroupBox:AddButton("Spoof Controller", function()
+    local ReplicatedStorage = game:GetService('ReplicatedStorage')
+	ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("Gamepad") -- "Touch", "Gamepad", "MouseKeyboard"
+end)
+
+VisualRightGroupBox:AddButton("Spoof Ipad", function()
+    local ReplicatedStorage = game:GetService('ReplicatedStorage')
+	ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("Touch") -- "Touch", "Gamepad", "MouseKeyboard"
+end)
+
+
+
+
+
+VisualRightGroupBox:AddToggle("DeviceSpoofloop", {
+    Text = "Device Spoof loop",
+    Default = false,
+})
+
+-- Mets la boucle juste aprÃ¨s le AddToggle
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+
+        if Toggles.DeviceSpoofloop.Value then
+			local ReplicatedStorage = game:GetService('ReplicatedStorage')
+			ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("VR") -- "Touch", "Gamepad", "MouseKeyboard"
+			task.wait(0.1)
+			local ReplicatedStorage = game:GetService('ReplicatedStorage')
+			ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("MouseKeyboard") -- "Touch", "Gamepad", "MouseKeyboard"
+            task.wait(0.1)
+			local ReplicatedStorage = game:GetService('ReplicatedStorage')
+			ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("Gamepad") -- "Touch", "Gamepad", "MouseKeyboard"
+			task.wait(0.1)
+			local ReplicatedStorage = game:GetService('ReplicatedStorage')
+			ReplicatedStorage.Remotes.Replication.Fighter.SetControls:FireServer("Touch") -- "Touch", "Gamepad", "MouseKeyboard"
+			task.wait(0.1)
+        end
+    end
+end)
+
+
+
+
+
+--============================================
+--SPOOOOOFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF BOXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+--=============================================
+
+
+local SpoofBox = Tabs.Visual:AddGroupbox({
+    Name = "Spoof Player",
+    Side = "Left",
+    IconName = "user",
+})
+
+SpoofBox:AddButton("Spoof Nickname", function()
+    local CONFIG = {
+        FakeName = ".gg/RiftCounter",
+        FakeDisplay = ".gg/RiftCounter",
+        Badge = utf8.char(0xE000),
+        BadgeAlt = "✓",
+        UseAltBadge = false,
+        Separator = " "
+    }
+
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
+    local Workspace = game:GetService("Workspace")
+
+    local VERIFIED_BADGE = CONFIG.UseAltBadge and CONFIG.BadgeAlt or CONFIG.Badge
+    local RealName = LocalPlayer.Name
+    local RealDisplay = LocalPlayer.DisplayName
+
+    local TargetName = CONFIG.FakeName
+    local TargetDisplay = CONFIG.FakeDisplay .. CONFIG.Separator .. VERIFIED_BADGE
+
+    local function SpoofAndBadge(obj)
+        if not obj.Text or obj.Text == "" then return end
+        
+        local text = obj.Text
+        
+        if text:find(CONFIG.FakeDisplay .. CONFIG.Separator .. VERIFIED_BADGE) then return end
+        
+        if text == CONFIG.FakeDisplay then
+            obj.Text = TargetDisplay
+            return
+        end
+        
+        if text == CONFIG.FakeName then return end
+        
+        local newText = text
+        
+        if newText:find(RealDisplay) then
+            newText = newText:gsub(RealDisplay, TargetDisplay)
+        end
+        
+        if newText:find(RealName) then
+            newText = newText:gsub(RealName, TargetName)
+        end
+        
+        if newText ~= obj.Text then
+            obj.Text = newText
+        end
+    end
+
+    local function MonitorObject(obj)
+        if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+            SpoofAndBadge(obj)
+            
+            obj:GetPropertyChangedSignal("Text"):Connect(function()
+                SpoofAndBadge(obj)
+            end)
+        end
+    end
+
+    for _, v in ipairs(LocalPlayer.PlayerGui:GetDescendants()) do
+        MonitorObject(v)
+    end
+
+    pcall(function()
+        local CoreGui = game:GetService("CoreGui")
+        for _, v in ipairs(CoreGui:GetDescendants()) do
+            MonitorObject(v)
+        end
+        CoreGui.DescendantAdded:Connect(MonitorObject)
+    end)
+
+    LocalPlayer.PlayerGui.DescendantAdded:Connect(MonitorObject)
+
+    local function MonitorBillboard(billboard)
+        for _, textObj in pairs(billboard:GetDescendants()) do
+            if textObj:IsA("TextLabel") then
+                local txt = textObj.Text
+                
+                if txt:find(RealDisplay) or txt:find(CONFIG.FakeDisplay) or txt:find(RealName) or txt:find(CONFIG.FakeName) then
+                    textObj.Text = TargetDisplay
+                end
+                
+                textObj:GetPropertyChangedSignal("Text"):Connect(function()
+                    if textObj.Text ~= TargetDisplay then
+                        textObj.Text = TargetDisplay
+                    end
+                end)
+            end
+        end
+        
+        billboard.DescendantAdded:Connect(function(obj)
+            if obj:IsA("TextLabel") then
+                obj.Text = TargetDisplay
+                obj:GetPropertyChangedSignal("Text"):Connect(function()
+                    if obj.Text ~= TargetDisplay then
+                        obj.Text = TargetDisplay
+                    end
+                end)
+            end
+        end)
+    end
+
+    local function MonitorCharacter(char)
+        local humanoid = char:WaitForChild("Humanoid", 10)
+        if humanoid then
+            humanoid.DisplayName = TargetDisplay
+            
+            humanoid:GetPropertyChangedSignal("DisplayName"):Connect(function()
+                if humanoid.DisplayName ~= TargetDisplay then
+                    humanoid.DisplayName = TargetDisplay
+                end
+            end)
+        end
+        
+        task.wait(0.5)
+        for _, billboard in pairs(char:GetDescendants()) do
+            if billboard:IsA("BillboardGui") then
+                MonitorBillboard(billboard)
+            end
+        end
+    end
+
+    if LocalPlayer.Character then
+        MonitorCharacter(LocalPlayer.Character)
+    end
+
+    LocalPlayer.CharacterAdded:Connect(MonitorCharacter)
+
+    -- Monitor plots in workspace
+    local function FindAndMonitorPlots()
+        for _, obj in pairs(Workspace:GetDescendants()) do
+            if obj:IsA("BillboardGui") then
+                for _, textObj in pairs(obj:GetDescendants()) do
+                    if textObj:IsA("TextLabel") then
+                        local txt = textObj.Text
+                        if txt:find(RealName) or txt:find(RealDisplay) or txt:find(CONFIG.FakeName) or txt:find(CONFIG.FakeDisplay) then
+                            MonitorBillboard(obj)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    FindAndMonitorPlots()
+    Workspace.DescendantAdded:Connect(function(obj)
+        if obj:IsA("BillboardGui") then
+            task.wait(0.5)
+            for _, textObj in pairs(obj:GetDescendants()) do
+                if textObj:IsA("TextLabel") then
+                    local txt = textObj.Text
+                    if txt:find(RealName) or txt:find(RealDisplay) or txt:find(CONFIG.FakeName) or txt:find(CONFIG.FakeDisplay) then
+                        MonitorBillboard(obj)
+                        break
+                    end
+                end
+            end
+        end
+    end)
+
+    pcall(function()
+        local TextChatService = game:GetService("TextChatService")
+        if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+            TextChatService.OnIncomingMessage = function(message)
+                local props = Instance.new("TextChatMessageProperties")
+                
+                if message.TextSource and message.TextSource.UserId == LocalPlayer.UserId then
+                    props.PrefixText = TargetDisplay
+                end
+                
+                return props
+            end
+        end
+    end)
+end)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--=========================================
+--FovStreched
+--=========================================
+
+
+
+VisualRightGroupBox:AddToggle("FOVStreched", {
+    Text = "FOV Streched",
+    Default = false,
+    Callback = function(Value)
+
+        getgenv().StretchActive = Value
+
+        if Value then
+            local Camera = workspace.CurrentCamera
+
+            if not getgenv().StretchConnection then
+                getgenv().StretchConnection = game:GetService("RunService").RenderStepped:Connect(function()
+                    if getgenv().StretchActive then
+                        Camera.CFrame = Camera.CFrame * CFrame.new(
+                            0, 0, 0,
+                            1, 0, 0,
+                            0, 0.67, 0,
+                            0, 0, 1
+                        )
+                    end
+                end)
+            end
+        end
+
+    end
+})
+
+
+
+
+
+
+
+
+
+
+
+-- ==========================
+-- RAGE BOT MODULE
+-- ==========================
+
+local RageBotConfig = {
+	Enabled = false,
+	TeamCheck = true,
+	TeleportDistance = 10, -- Distance au-dessus du joueur
+	MinHealth = 1, -- Santé minimale de la cible pour être valide
+	TookDamage = false, -- Indicateur si on a pris des dégâts
+	LastHealth = 100, -- Dernière santé connue
+	OriginalCameraType = nil, -- Sauvegarder le CameraType original
+	OriginalCameraCFrame = nil, -- Sauvegarder la position originale de la caméra
+	RotationSpeed = 720, -- Vitesse de rotation très rapide (degrés par seconde)
+	RotationRadius = 3, -- Rayon de rotation autour de la cible
+	CurrentAngle = 0, -- Angle actuel de rotation
+}
+
+local RageBotConnection = nil
+local RageBotStatusText = Drawing.new("Text")
+RageBotStatusText.Visible = false
+RageBotStatusText.Text = "Rage Bot: Inactif"
+RageBotStatusText.Size = 14
+RageBotStatusText.Color = Color3.fromRGB(255, 50, 50)
+RageBotStatusText.Outline = true
+RageBotStatusText.OutlineColor = Color3.fromRGB(0, 0, 0)
+RageBotStatusText.Center = false
+
+local function GetRageBotTarget()
+	local character = LocalPlayer.Character
+	if not character then return nil end
+	
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return nil end
+	
+	for _, player in pairs(Players:GetPlayers()) do
+		if player == LocalPlayer then continue end
+		
+		local targetCharacter = player.Character
+		if not targetCharacter then continue end
+		
+		local humanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+		if not humanoid or humanoid.Health <= 0 then continue end
+		
+		-- Health check : vérifier que la cible a assez de santé
+		if humanoid.Health < RageBotConfig.MinHealth then continue end
+		
+		if RageBotConfig.TeamCheck then
+			if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+				continue
+			end
+		end
+		
+		return player
+	end
+	
+	return nil
+end
+
+local function RageBotCycle()
+	if not RageBotConfig.Enabled then return end
+	
+	local character = LocalPlayer.Character
+	if not character then return end
+	
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return end
+	
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+	
+	-- Désancrer le personnage pour permettre le mouvement
+	humanoidRootPart.Anchored = false
+	
+	local target = GetRageBotTarget()
+	
+	if target then
+		-- Changer la couleur en rouge si on a pris des dégâts
+		if RageBotConfig.TookDamage then
+			RageBotStatusText.Text = "Rage Bot: DÉGÂTS - Téléportation vide..."
+			RageBotStatusText.Color = Color3.fromRGB(255, 0, 0)
+		else
+			RageBotStatusText.Text = "Rage Bot: Cible trouvée - Téléportation..."
+			RageBotStatusText.Color = Color3.fromRGB(50, 255, 50)
+		end
+		
+		local targetCharacter = target.Character
+		if targetCharacter then
+			local targetHumanoidRootPart = targetCharacter:FindFirstChild("HumanoidRootPart")
+			if targetHumanoidRootPart then
+				-- Mettre à jour l'angle de rotation très rapidement
+				local deltaTime = 1/120 -- Environ 120 FPS pour mouvements ultra-rapides
+				RageBotConfig.CurrentAngle = (RageBotConfig.CurrentAngle + RageBotConfig.RotationSpeed * deltaTime) % 360
+				
+				-- Calculer la position rotative autour de la cible
+				local targetPos = targetHumanoidRootPart.Position
+				local angleRad = math.rad(RageBotConfig.CurrentAngle)
+				
+				-- Position au-dessus avec rotation
+				local offsetX = math.cos(angleRad) * RageBotConfig.RotationRadius
+				local offsetZ = math.sin(angleRad) * RageBotConfig.RotationRadius
+				local teleportPos = targetPos + Vector3.new(offsetX, RageBotConfig.TeleportDistance, offsetZ)
+				
+				-- Utiliser Humanoid:MoveTo() qui est accepté par le serveur
+				humanoid:MoveTo(teleportPos)
+				
+				-- Orienter le personnage vers le bas
+				task.wait()
+				humanoidRootPart.CFrame = CFrame.new(teleportPos) * CFrame.Angles(math.rad(90), 0, 0)
+			end
+		end
+	else
+		RageBotStatusText.Text = "Rage Bot: Recherche cible..."
+		RageBotStatusText.Color = Color3.fromRGB(255, 255, 50)
+		-- Réinitialiser l'indicateur de dégâts quand on n'a plus de cible
+		RageBotConfig.TookDamage = false
+	end
+end
+
+local function EnableRageBot()
+	RageBotConfig.Enabled = true
+	RageBotConfig.TookDamage = false
+	RageBotStatusText.Visible = true
+	
+	local character = LocalPlayer.Character
+	if character then
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			RageBotConfig.LastHealth = humanoid.Health
+		end
+	end
+	
+	-- Sauvegarder et désynchroniser la caméra
+	local camera = workspace.CurrentCamera
+	if camera then
+		RageBotConfig.OriginalCameraType = camera.CameraType
+		RageBotConfig.OriginalCameraCFrame = camera.CFrame
+		camera.CameraType = Enum.CameraType.Scriptable -- Mode scriptable pour contrôle total
+	end
+	
+	if RageBotConnection then
+		RageBotConnection:Disconnect()
+	end
+	
+	RageBotConnection = RunService.RenderStepped:Connect(function()
+		local mousePos = UserInputService:GetMouseLocation()
+		RageBotStatusText.Position = Vector2.new(mousePos.X + 15, mousePos.Y + 15)
+		
+		local cam = workspace.CurrentCamera
+		if cam and RageBotConfig.OriginalCameraCFrame then
+			cam.CFrame = RageBotConfig.OriginalCameraCFrame
+		end
+		
+		if LocalPlayer.Character then
+			local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+			if hum then
+				if hum.Health < RageBotConfig.LastHealth then
+					RageBotConfig.TookDamage = true
+				end
+				RageBotConfig.LastHealth = hum.Health
+			end
+		end
+		
+		local ok, err = pcall(RageBotCycle)
+		if not ok then
+			warn("[RageBot] Erreur: " .. tostring(err))
+		end
+	end)
+end
+
+local function DisableRageBot()
+	RageBotConfig.Enabled = false
+	RageBotConfig.TookDamage = false
+	RageBotStatusText.Visible = false
+	RageBotStatusText.Text = "Rage Bot: Inactif"
+	
+	local character = LocalPlayer.Character
+	if character then
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		if humanoidRootPart then
+			humanoidRootPart.Anchored = false
+		end
+	end
+	
+	-- Restaurer la caméra
+	local camera = workspace.CurrentCamera
+	if camera then
+		if RageBotConfig.OriginalCameraType then
+			camera.CameraType = RageBotConfig.OriginalCameraType
+		end
+	end
+	
+	if RageBotConnection then
+		RageBotConnection:Disconnect()
+		RageBotConnection = nil
+	end
+end
+
+UETab:AddToggle("RageBotEnabled", {
+	Text = "Activer Rage Bot",
+	Default = false,
+	Callback = function(Value)
+		if Value then
+			EnableRageBot()
+		else
+			DisableRageBot()
+		end
+	end,
+}):AddKeyPicker("RageBotKeybind", {
+	Default = "None",
+	SyncToggleState = true,
+	Mode = "Toggle",
+	Text = "Keybind Rage Bot",
+})
+
+UETab:AddToggle("RageBotTeamCheck", {
+	Text = "Team Check",
+	Default = true,
+	Callback = function(Value)
+		RageBotConfig.TeamCheck = Value
+	end,
+})
+
+UETab:AddSlider("RageBotTeleportDistance", {
+	Text = "Distance téléportation",
+	Default = 10,
+	Min = 1,
+	Max = 50,
+	Rounding = 0,
+	Callback = function(Value)
+		RageBotConfig.TeleportDistance = Value
+	end,
+})
+
+UETab:AddSlider("RageBotMinHealth", {
+	Text = "Santé minimale cible",
+	Default = 1,
+	Min = 1,
+	Max = 150,
+	Rounding = 0,
+	Callback = function(Value)
+		RageBotConfig.MinHealth = Value
+	end,
+})
+
+UETab:AddSlider("RageBotRotationSpeed", {
+	Text = "Vitesse de rotation (°/s)",
+	Default = 720,
+	Min = 0,
+	Max = 1440,
+	Rounding = 0,
+	Callback = function(Value)
+		RageBotConfig.RotationSpeed = Value
+	end,
+})
+
+UETab:AddSlider("RageBotRotationRadius", {
+	Text = "Rayon de rotation",
+	Default = 3,
+	Min = 0,
+	Max = 10,
+	Rounding = 1,
+	Callback = function(Value)
+		RageBotConfig.RotationRadius = Value
+	end,
+})
+
+local SleepyTab = CounterTabbox:AddTab("Sleepy")
+
+-- ==========================
+-- GROUND SPAM MODULE
+-- ==========================
+local GroundSpamConfig = {
+	Enabled = false,
+	Depth = 2, -- Profondeur dans le sol (réduite pour éviter la mort)
+	StretchAmount = 2, -- Facteur d'allongement
+	LookAtSky = true, -- Regarder vers le ciel
+	PreventDeath = true, -- Empêcher la mort
+	ForceSync = true, -- Forcer la synchronisation serveur
+	SyncDelay = 0.016, -- Délai pour synchronisation serveur
+	Anchor = true, -- Ancrer le personnage pour éviter de tomber
+	OriginalWalkSpeed = nil,
+	OriginalJumpPower = nil,
+	LockedPosition = nil, -- Position verrouillée dans le sol
+	LockedCFrame = nil, -- CFrame verrouillé
+}
+
+local GroundSpamConnection = nil
+local GroundSpamOriginalTransparency = {}
+local GroundSpamOriginalSize = {}
+
+local function EnableGroundSpam()
+	GroundSpamConfig.Enabled = true
+	
+	local character = LocalPlayer.Character
+	if not character then return end
+	
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return end
+	
+	-- Calculer et verrouiller la position dans le sol UNE SEULE FOIS
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = {character}
+	
+	local rayResult = workspace:Raycast(humanoidRootPart.Position, Vector3.new(0, -50, 0), rayParams)
+	local groundPosition = humanoidRootPart.Position
+	
+	if rayResult then
+		groundPosition = rayResult.Position - Vector3.new(0, GroundSpamConfig.Depth, 0)
+	else
+		groundPosition = humanoidRootPart.Position - Vector3.new(0, GroundSpamConfig.Depth, 0)
+	end
+	
+	-- Verrouiller la position et le CFrame
+	GroundSpamConfig.LockedPosition = groundPosition
+	GroundSpamConfig.LockedCFrame = CFrame.new(groundPosition) * CFrame.Angles(math.rad(-90), 0, 0)
+	
+	print("[GroundSpam] Position verrouillée: " .. tostring(groundPosition))
+	
+	-- Sauvegarder les propriétés originales
+	for _, part in pairs(character:GetDescendants()) do
+		if part:IsA("BasePart") then
+			GroundSpamOriginalTransparency[part] = part.Transparency
+			GroundSpamOriginalSize[part] = part.Size
+		end
+	end
+	
+	-- Sauvegarder les propriétés du humanoid
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		GroundSpamConfig.OriginalWalkSpeed = humanoid.WalkSpeed
+		GroundSpamConfig.OriginalJumpPower = humanoid.JumpPower
+		humanoid.JumpPower = 0
+		humanoid.WalkSpeed = 0
+	end
+	
+	-- Appliquer immédiatement le verrouillage
+	humanoidRootPart.CFrame = GroundSpamConfig.LockedCFrame
+	humanoidRootPart.Anchored = true
+	
+	if GroundSpamConnection then
+		GroundSpamConnection:Disconnect()
+	end
+	
+	-- Verrouillage agressif avec Heartbeat (plus fréquent que RenderStepped)
+	GroundSpamConnection = RunService.Heartbeat:Connect(function()
+		if not GroundSpamConfig.Enabled then return end
+		
+		local character = LocalPlayer.Character
+		if not character then return end
+		
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		if not humanoidRootPart then return end
+		
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if not humanoid then return end
+		
+		-- PRIORITÉ ABSOLUE: Empêcher la mort
+		if GroundSpamConfig.PreventDeath then
+			if humanoid.Health <= 0 then
+				humanoid.Health = 100
+			elseif humanoid.Health < 25 then
+				humanoid.Health = 100
+			end
+		end
+		
+		-- Verrouillage positionnel AGRESSIF - forcer la position verrouillée
+		humanoidRootPart.CFrame = GroundSpamConfig.LockedCFrame
+		humanoidRootPart.Anchored = true
+		
+		-- Noclip total
+		for _, part in pairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+			end
+		end
+		
+		-- Synchronisation serveur agressive
+		if GroundSpamConfig.ForceSync then
+			humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+			humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+			humanoidRootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+			humanoidRootPart.RotVelocity = Vector3.new(0, 0, 0)
+		end
+		
+		-- Maintenir les dimensions
+		for _, part in pairs(character:GetDescendants()) do
+			if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+				local originalSize = GroundSpamOriginalSize[part]
+				if originalSize then
+					part.Size = Vector3.new(originalSize.X, originalSize.Y * GroundSpamConfig.StretchAmount, originalSize.Z)
+				end
+			end
+		end
+		
+		-- Triple vérification anti-mort
+		if GroundSpamConfig.PreventDeath then
+			humanoid.Health = math.max(humanoid.Health, 75)
+		end
+	end)
+end
+
+local function DisableGroundSpam()
+	GroundSpamConfig.Enabled = false
+	
+	-- Libérer le verrouillage positionnel
+	GroundSpamConfig.LockedPosition = nil
+	GroundSpamConfig.LockedCFrame = nil
+	
+	local character = LocalPlayer.Character
+	if character then
+		-- Désancrer le personnage
+		if GroundSpamConfig.Anchor then
+			local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+			if humanoidRootPart then
+				humanoidRootPart.Anchored = false
+			end
+		end
+		
+		-- Restaurer les collisions
+		for _, part in pairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = true
+				
+				-- Restaurer la taille originale
+				if GroundSpamOriginalSize[part] then
+					part.Size = GroundSpamOriginalSize[part]
+				end
+				
+				-- Restaurer la transparence originale
+				if GroundSpamOriginalTransparency[part] then
+					part.Transparency = GroundSpamOriginalTransparency[part]
+				end
+			end
+		end
+		
+		-- Restaurer les propriétés du humanoid
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			if GroundSpamConfig.OriginalWalkSpeed then
+				humanoid.WalkSpeed = GroundSpamConfig.OriginalWalkSpeed
+			end
+			if GroundSpamConfig.OriginalJumpPower then
+				humanoid.JumpPower = GroundSpamConfig.OriginalJumpPower
+			end
+		end
+	end
+	
+	-- Nettoyer les tables
+	GroundSpamOriginalTransparency = {}
+	GroundSpamOriginalSize = {}
+	GroundSpamConfig.OriginalWalkSpeed = nil
+	GroundSpamConfig.OriginalJumpPower = nil
+	GroundSpamConfig.LockedPosition = nil
+	GroundSpamConfig.LockedCFrame = nil
+	
+	if GroundSpamConnection then
+		GroundSpamConnection:Disconnect()
+		GroundSpamConnection = nil
+	end
+end
+
+SleepyTab:AddToggle("GroundSpamEnabled", {
+	Text = "Activer Ground Spam",
+	Default = false,
+	Callback = function(Value)
+		if Value then
+			EnableGroundSpam()
+		else
+			DisableGroundSpam()
+		end
+	end,
+}):AddKeyPicker("GroundSpamKeybind", {
+	Default = "None",
+	SyncToggleState = true,
+	Mode = "Toggle",
+	Text = "Keybind Ground Spam",
+})
+
+SleepyTab:AddSlider("GroundSpamDepth", {
+	Text = "Profondeur dans le sol",
+	Default = 2,
+	Min = 1,
+	Max = 10,
+	Rounding = 0,
+	Callback = function(Value)
+		GroundSpamConfig.Depth = Value
+	end,
+})
+
+SleepyTab:AddSlider("GroundSpamStretchAmount", {
+	Text = "Facteur d'allongement",
+	Default = 2,
+	Min = 1,
+	Max = 5,
+	Rounding = 1,
+	Callback = function(Value)
+		GroundSpamConfig.StretchAmount = Value
+	end,
+})
+
+SleepyTab:AddToggle("GroundSpamLookAtSky", {
+	Text = "Regarder vers le ciel",
+	Default = true,
+	Callback = function(Value)
+		GroundSpamConfig.LookAtSky = Value
+	end,
+})
+
+SleepyTab:AddToggle("GroundSpamPreventDeath", {
+	Text = "Empêcher la mort",
+	Default = true,
+	Callback = function(Value)
+		GroundSpamConfig.PreventDeath = Value
+	end,
+})
+
+SleepyTab:AddToggle("GroundSpamAnchor", {
+	Text = "Ancrer (éviter chute)",
+	Default = true,
+	Callback = function(Value)
+		GroundSpamConfig.Anchor = Value
+	end,
+})
+
+SleepyTab:AddDivider()
+
+SleepyTab:AddToggle("GroundSpamForceSync", {
+	Text = "Forcer synchro serveur",
+	Default = true,
+	Callback = function(Value)
+		GroundSpamConfig.ForceSync = Value
+	end,
+})
+
+SleepyTab:AddSlider("GroundSpamSyncDelay", {
+	Text = "Délai synchro serveur (s)",
+	Default = 0.016,
+	Min = 0.001,
+	Max = 0.1,
+	Rounding = 3,
+	Callback = function(Value)
+		GroundSpamConfig.SyncDelay = Value
+	end,
+})
+
+-- ==========================
+-- ANTI KATANA MODULE
+-- ==========================
+local AntiKatanaConfig = {
+	Enabled = false,
+	Distance = 10,
+	AutoDodge = true,
+	DodgeDelay = 0.1,
+	Connection = nil,
+}
+
+local AntiKatanaGroupBox = Tabs.Counter:AddGroupbox({
+	Side = "Left",
+	Name = "Anti Katana",
+})
+
+AntiKatanaGroupBox:AddToggle("AntiKatanaEnabled", {
+	Text = "Activer Anti Katana",
+	Default = false,
+	Callback = function(Value)
+		AntiKatanaConfig.Enabled = Value
+		if Value then
+			if AntiKatanaConfig.Connection then
+				AntiKatanaConfig.Connection:Disconnect()
+			end
+			
+			AntiKatanaConfig.Connection = RunService.Heartbeat:Connect(function()
+				if not AntiKatanaConfig.Enabled then return end
+				
+				local character = LocalPlayer.Character
+				if not character then return end
+				
+				local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+				if not humanoidRootPart then return end
+				
+				-- Détecter les joueurs avec des katanas à proximité
+				for _, player in pairs(Players:GetPlayers()) do
+					if player == LocalPlayer then continue end
+					
+					local targetCharacter = player.Character
+					if not targetCharacter then continue end
+					
+					-- Chercher des katanas dans le personnage
+					local hasKatana = false
+					for _, item in pairs(targetCharacter:GetDescendants()) do
+						if item.Name:lower():find("katana") or item.Name:lower():find("sword") then
+							hasKatana = true
+							break
+						end
+					end
+					
+					if hasKatana then
+						local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+						if targetRoot then
+							local distance = (targetRoot.Position - humanoidRootPart.Position).Magnitude
+							
+							if distance < AntiKatanaConfig.Distance then
+								-- Esquiver automatiquement
+								if AntiKatanaConfig.AutoDodge then
+									local dodgeDirection = Vector3.new(math.random(-1, 1), 0, math.random(-1, 1)).Unit
+									local dodgePosition = humanoidRootPart.Position + (dodgeDirection * 5)
+									humanoidRootPart.CFrame = CFrame.new(dodgePosition)
+								end
+							end
+						end
+					end
+				end
+			end)
+		else
+			if AntiKatanaConfig.Connection then
+				AntiKatanaConfig.Connection:Disconnect()
+				AntiKatanaConfig.Connection = nil
+			end
+		end
+	end,
+})
+
+AntiKatanaGroupBox:AddSlider("AntiKatanaDistance", {
+	Text = "Distance de détection",
+	Default = 10,
+	Min = 5,
+	Max = 30,
+	Rounding = 0,
+	Callback = function(Value)
+		AntiKatanaConfig.Distance = Value
+	end,
+})
+
+AntiKatanaGroupBox:AddToggle("AntiKatanaAutoDodge", {
+	Text = "Auto Esquive",
+	Default = true,
+	Callback = function(Value)
+		AntiKatanaConfig.AutoDodge = Value
+	end,
+})
+
+--=========================================================
+-- RAGE
+--=========================================================
+local RageGroupBox = Tabs.Rage:AddGroupbox({
+    Side = "Left",
+    Name = "Rage Settings",
+})
+
+RageGroupBox:AddToggle("RageEnabled", {
+    Text = "Activer le Rage",
+    Default = false,
+    Callback = function(Value)
+        print("Rage activé :", Value)
+    end,
+})
+
+RageGroupBox:AddSlider("RageIntensity", {
+    Text = "Intensité",
+    Default = 25,
+    Min = 0,
+    Max = 100,
+    Rounding = 0,
+    Callback = function(Value)
+        print("Intensité Rage :", Value)
+    end,
+})
+
+local RageTargetBox = Tabs.Rage:AddGroupbox({
+    Side = "Right",
+    Name = "Ciblage",
+})
+RageTargetBox:AddToggle("RageTeamCheck", {
+    Text = "Team Check",
+    Default = true,
+})
+
+-- ==========================
+-- GROUND RAGE MODULE
+-- ==========================
+local GroundRageConfig = {
+    Enabled = false,
+    Depth = 3, -- Profondeur dans le sol
+    Anchor = true, -- Ancrer pour éviter les corrections physiques
+    ForceSync = true, -- Forcer la synchronisation serveur
+    SyncDelay = 0.016, -- Délai pour synchronisation serveur
+    OriginalCFrame = nil, -- Sauvegarder le CFrame original
+    OriginalAnchored = nil, -- Sauvegarder l'état anchored original
+    Connection = nil,
+}
+
+local GroundRageStatusText = Drawing.new("Text")
+GroundRageStatusText.Visible = false
+GroundRageStatusText.Text = "Ground Rage: Inactif"
+GroundRageStatusText.Size = 18
+GroundRageStatusText.Color = Color3.fromRGB(255, 100, 0)
+GroundRageStatusText.Outline = true
+GroundRageStatusText.OutlineColor = Color3.fromRGB(0, 0, 0)
+GroundRageStatusText.Center = false
+
+local function EnableGroundRage()
+    GroundRageConfig.Enabled = true
+    
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return end
+    
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    
+    -- Sauvegarder l'état original
+    GroundRageConfig.OriginalCFrame = humanoidRootPart.CFrame
+    GroundRageConfig.OriginalAnchored = humanoidRootPart.Anchored
+    
+    -- Afficher l'indicateur
+    GroundRageStatusText.Visible = true
+    
+    if GroundRageConfig.Connection then
+        GroundRageConfig.Connection:Disconnect()
+    end
+    
+    GroundRageConfig.Connection = RunService.Heartbeat:Connect(function()
+        if not GroundRageConfig.Enabled then return end
+        
+        local character = LocalPlayer.Character
+        if not character then return end
+        
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if not humanoidRootPart then return end
+        
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        
+        -- Désactiver les collisions pour éviter les interférences
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+        
+        -- Trouver la position du sol
+        local rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        rayParams.FilterDescendantsInstances = {character}
+        
+        local rayResult = workspace:Raycast(humanoidRootPart.Position, Vector3.new(0, -100, 0), rayParams)
+        local groundY = humanoidRootPart.Position.Y
+        
+        if rayResult then
+            groundY = rayResult.Position.Y
+        end
+        
+        -- Position horizontale dans le sol (rotation de 90 degrés sur l'axe X)
+        local horizontalPosition = Vector3.new(humanoidRootPart.Position.X, groundY - GroundRageConfig.Depth, humanoidRootPart.Position.Z)
+        
+        -- Orienter le personnage horizontalement (allongé parallèlement au sol)
+        -- L'orientation reste constante, on ne modifie que la rotation pour être horizontal
+        local currentRotation = humanoidRootPart.CFrame.Rotation
+        local horizontalCFrame = CFrame.new(horizontalPosition) * CFrame.Angles(math.rad(90), 0, 0)
+        
+        -- Appliquer la position
+        humanoidRootPart.CFrame = horizontalCFrame
+        
+        -- Ancrer pour éviter les corrections physiques
+        if GroundRageConfig.Anchor then
+            humanoidRootPart.Anchored = true
+        end
+        
+        -- Forcer la synchronisation serveur
+        if GroundRageConfig.ForceSync then
+            humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+            humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            humanoidRootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        end
+        
+        -- Mettre à jour l'indicateur
+        local mousePos = UserInputService:GetMouseLocation()
+        GroundRageStatusText.Position = Vector2.new(mousePos.X + 15, mousePos.Y + 15)
+        GroundRageStatusText.Text = "Ground Rage: Actif"
+        GroundRageStatusText.Color = Color3.fromRGB(0, 255, 0)
+    end)
+end
+
+local function DisableGroundRage()
+    GroundRageConfig.Enabled = false
+    
+    -- Cacher l'indicateur
+    GroundRageStatusText.Visible = false
+    GroundRageStatusText.Text = "Ground Rage: Inactif"
+    
+    local character = LocalPlayer.Character
+    if character then
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if humanoidRootPart then
+            -- Désancrer le personnage
+            if GroundRageConfig.Anchor then
+                humanoidRootPart.Anchored = GroundRageConfig.OriginalAnchored or false
+            end
+            
+            -- Restaurer les collisions
+            for _, part in pairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+            
+            -- Restaurer le CFrame original si disponible
+            if GroundRageConfig.OriginalCFrame then
+                humanoidRootPart.CFrame = GroundRageConfig.OriginalCFrame
+            end
+        end
+    end
+    
+    -- Nettoyer
+    GroundRageConfig.OriginalCFrame = nil
+    GroundRageConfig.OriginalAnchored = nil
+    
+    if GroundRageConfig.Connection then
+        GroundRageConfig.Connection:Disconnect()
+        GroundRageConfig.Connection = nil
+    end
+end
+
+RageGroupBox:AddDivider()
+
+RageGroupBox:AddToggle("GroundRageEnabled", {
+    Text = "Ground Rage",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            EnableGroundRage()
+        else
+            DisableGroundRage()
+        end
+    end,
+}):AddKeyPicker("GroundRageKeybind", {
+    Default = "None",
+    SyncToggleState = true,
+    Mode = "Toggle",
+    Text = "Keybind Ground Rage",
+})
+
+RageGroupBox:AddSlider("GroundRageDepth", {
+    Text = "Profondeur dans le sol",
+    Default = 3,
+    Min = 1,
+    Max = 10,
+    Rounding = 0,
+    Callback = function(Value)
+        GroundRageConfig.Depth = Value
+    end,
+})
+
+RageGroupBox:AddToggle("GroundRageAnchor", {
+    Text = "Ancrer (éviter corrections)",
+    Default = true,
+    Callback = function(Value)
+        GroundRageConfig.Anchor = Value
+    end,
+})
+
+RageGroupBox:AddDivider()
+
+RageGroupBox:AddToggle("GroundRageForceSync", {
+    Text = "Forcer synchro serveur",
+    Default = true,
+    Callback = function(Value)
+        GroundRageConfig.ForceSync = Value
+    end,
+})
+
+-- ==========================
+-- KNIFE RAGE MODULE
+-- ==========================
+local KnifeRageConfig = {
+    Enabled = false,
+    ApproachDistance = 3,
+    EngagementTime = 0.1,
+    AttackCooldown = 0.3,
+    TargetPart = "HumanoidRootPart",
+    TeamCheck = true,
+    MinHealth = 1,
+    WalkSpeed = 500000,
+    ServerSyncDelay = 0.008,
+    ForceSync = true,
+    OriginalCameraType = nil,
+    OriginalCameraCFrame = nil,
+    Connection = nil,
+    SafePosition = nil, -- Position sécurisée pendant le cooldown
+}
+
+local KnifeRageCurrentPhase = "idle" -- idle, orient, approach, attack, cooldown
+local KnifeRageTarget = nil
+local KnifeRageTimer = 0
+local KnifeRageLastAttackTime = 0
+local KnifeRageCycleCount = 0
+local KnifeRageOriginalWalkSpeed = nil
+
+-- Indicateur d'état
+local KnifeRageStatusText = Drawing.new("Text")
+KnifeRageStatusText.Visible = false
+KnifeRageStatusText.Text = "Knife Rage: Inactif"
+KnifeRageStatusText.Size = 30
+KnifeRageStatusText.Color = Color3.fromRGB(255, 100, 100)
+KnifeRageStatusText.Outline = true
+KnifeRageStatusText.OutlineColor = Color3.fromRGB(0, 0, 0)
+KnifeRageStatusText.Center = true
+KnifeRageStatusText.Position = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y - 60)
+
+-- Mettre à jour la position quand la taille de l'écran change
+workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+    KnifeRageStatusText.Position = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y - 60)
+end)
+
+-- Fonction pour simuler le clic droit
+local function SimulateRightClick()
+    -- Simulation du clic droit via mouse2click si disponible
+    if mouse2click then
+        mouse2click()
+    end
+end
+
+-- Fonction pour forcer la synchronisation serveur
+local function ForceServerSync(character, targetPosition)
+    if not character then return end
+    
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return end
+    
+    if KnifeRageConfig.ForceSync then
+        if targetPosition then
+            humanoidRootPart.CFrame = CFrame.new(targetPosition, targetPosition + Vector3.new(0, 10, 0))
+        end
+        
+        humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+        humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    end
+end
+
+local function GetKnifeRageTarget()
+    local target = nil
+    local closestDistance = 100000
+    local character = LocalPlayer.Character
+    
+    if not character then return nil end
+    
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return nil end
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        
+        local targetCharacter = player.Character
+        if not targetCharacter then continue end
+        
+        local humanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then continue end
+        
+        if humanoid.Health < KnifeRageConfig.MinHealth then continue end
+        
+        if KnifeRageConfig.TeamCheck then
+            if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+                continue
+            end
+        end
+        
+        local targetPart = targetCharacter:FindFirstChild(KnifeRageConfig.TargetPart)
+        if not targetPart then
+            targetPart = targetCharacter:FindFirstChild("HumanoidRootPart")
+        end
+        if not targetPart then continue end
+        
+        local distance = (targetPart.Position - humanoidRootPart.Position).Magnitude
+        
+        if distance < closestDistance then
+            closestDistance = distance
+            target = targetPart
+        end
+    end
+    
+    return target
+end
+
+local function KnifeRageCycle()
+    if not KnifeRageConfig.Enabled then return end
+    
+    if not LocalPlayer.Character then return end
+    
+    local humanoidRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return end
+    
+    local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    
+    local currentTime = tick()
+    
+    local phaseText = ""
+    if KnifeRageCurrentPhase == "idle" then
+        phaseText = "Recherche cible..."
+    elseif KnifeRageCurrentPhase == "orient" then
+        phaseText = "Orientation"
+    elseif KnifeRageCurrentPhase == "approach" then
+        phaseText = "Approche"
+    elseif KnifeRageCurrentPhase == "attack" then
+        phaseText = "Attaque"
+    elseif KnifeRageCurrentPhase == "cooldown" then
+        local timeRemaining = math.ceil(KnifeRageConfig.AttackCooldown - (currentTime - KnifeRageTimer))
+        phaseText = "Cooldown (" .. timeRemaining .. "s)"
+    end
+    
+    KnifeRageStatusText.Text = "Knife Rage: " .. phaseText .. " | Kills: " .. KnifeRageCycleCount
+    
+    if KnifeRageCurrentPhase == "idle" then
+        KnifeRageTarget = GetKnifeRageTarget()
+        
+        if KnifeRageTarget then
+            KnifeRageCurrentPhase = "orient"
+            KnifeRageTimer = currentTime
+        end
+    
+    elseif KnifeRageCurrentPhase == "orient" then
+        if KnifeRageTarget and KnifeRageTarget.Parent then
+            local targetPosition = KnifeRageTarget.Position
+            
+            -- Orienter le personnage vers la cible SANS CHANGER LA POSITION
+            humanoidRootPart.CFrame = CFrame.new(humanoidRootPart.Position, targetPosition)
+            
+            -- NE PAS ANCRER - permettre le mouvement pour l'approche
+            
+            -- Force synchronisation serveur pour l'orientation
+            if KnifeRageConfig.ForceSync then
+                humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+                humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                humanoidRootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            end
+            
+            -- Passer à l'approche après un court délai
+            if currentTime - KnifeRageTimer >= 0.05 then
+                KnifeRageCurrentPhase = "approach"
+                KnifeRageTimer = currentTime
+            end
+        else
+            KnifeRageCurrentPhase = "idle"
+        end
+    
+    elseif KnifeRageCurrentPhase == "approach" then
+        if KnifeRageTarget and KnifeRageTarget.Parent then
+            local targetPosition = KnifeRageTarget.Position
+            local targetCFrame = KnifeRageTarget.CFrame
+            
+            -- Calculer la position derrière la cible
+            local behindOffset = targetCFrame.LookVector * -KnifeRageConfig.ApproachDistance
+            local behindPosition = targetPosition + behindOffset + Vector3.new(0, 0, 0)
+            
+            humanoid:MoveTo(behindPosition)
+            task.wait()
+            
+            -- Téléporter EN MAINTENANT l'orientation vers la cible
+            humanoidRootPart.CFrame = CFrame.new(behindPosition, targetPosition)
+            
+            -- SAUVEGARDER la position sécurisée
+            KnifeRageConfig.SafePosition = behindPosition
+            
+            -- Ancrer après téléportation pour éviter les déplacements
+            humanoidRootPart.Anchored = true
+            
+            -- Force synchronisation serveur pour la position et l'orientation
+            if KnifeRageConfig.ForceSync then
+                humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+                humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                humanoidRootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            end
+            
+            KnifeRageCurrentPhase = "attack"
+            KnifeRageTimer = currentTime
+        else
+            KnifeRageCurrentPhase = "idle"
+        end
+    
+    elseif KnifeRageCurrentPhase == "attack" then
+        if KnifeRageTarget and KnifeRageTarget.Parent then
+            local targetPosition = KnifeRageTarget.Position
+            local targetCFrame = KnifeRageTarget.CFrame
+            
+            -- Se positionner derrière la cible EN MAINTENANT l'orientation
+            local behindOffset = targetCFrame.LookVector * -KnifeRageConfig.ApproachDistance
+            local behindPosition = targetPosition + behindOffset
+            
+            -- MAINTENIR LA POSITION ACTUELLE, SEULEMENT L'ORIENTATION
+            humanoidRootPart.CFrame = CFrame.new(humanoidRootPart.Position, targetPosition)
+            
+            -- Garder ancré pour éviter les téléportations
+            humanoidRootPart.Anchored = true
+            
+            -- Simuler le clic droit (attaque au couteau)
+            SimulateRightClick()
+            
+            -- Maintenir l'orientation pendant l'attaque
+            if KnifeRageConfig.ForceSync then
+                humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+                humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                humanoidRootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            end
+        end
+        
+        if currentTime - KnifeRageTimer >= KnifeRageConfig.EngagementTime then
+            KnifeRageCurrentPhase = "cooldown"
+            KnifeRageTimer = currentTime
+            KnifeRageCycleCount = KnifeRageCycleCount + 1
+        end
+    
+    elseif KnifeRageCurrentPhase == "cooldown" then
+        -- MAINTENIR LA POSITION ACTUELLE - AUCUN CHANGEMENT DE POSITION
+        -- Ancrer pour empêcher tout mouvement et téléportation
+        humanoidRootPart.Anchored = true
+        
+        -- S'assurer qu'aucune vélocité ne cause des déplacements
+        if KnifeRageConfig.ForceSync then
+            humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+            humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            humanoidRootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        end
+        
+        if currentTime - KnifeRageTimer >= KnifeRageConfig.AttackCooldown then
+            KnifeRageCurrentPhase = "idle"
+            humanoidRootPart.Anchored = false
+        end
+    end
+end
+
+local function EnableKnifeRage()
+    KnifeRageConfig.Enabled = true
+    KnifeRageCurrentPhase = "idle"
+    KnifeRageTarget = nil
+    KnifeRageCycleCount = 0
+    
+    KnifeRageStatusText.Visible = true
+    
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            KnifeRageOriginalWalkSpeed = humanoid.WalkSpeed
+            humanoid.WalkSpeed = KnifeRageConfig.WalkSpeed
+        end
+        
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if humanoidRootPart then
+            humanoidRootPart.Anchored = false -- S'assurer qu'il n'est pas ancré au démarrage
+        end
+    end
+    
+    local camera = workspace.CurrentCamera
+    if camera then
+        KnifeRageConfig.OriginalCameraType = camera.CameraType
+        KnifeRageConfig.OriginalCameraCFrame = camera.CFrame
+        camera.CameraType = Enum.CameraType.Scriptable
+    end
+    
+    if KnifeRageConfig.Connection then
+        KnifeRageConfig.Connection:Disconnect()
+    end
+    
+    KnifeRageConfig.Connection = RunService.RenderStepped:Connect(function()
+        local camera = workspace.CurrentCamera
+        if camera then
+            KnifeRageStatusText.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y - 60)
+        end
+        
+        if camera and KnifeRageConfig.OriginalCameraCFrame then
+            camera.CFrame = KnifeRageConfig.OriginalCameraCFrame
+        end
+        
+        local ok, err = pcall(KnifeRageCycle)
+        if not ok then
+            warn("[KnifeRage] Erreur: " .. tostring(err))
+        end
+    end)
+end
+
+local function DisableKnifeRage()
+    KnifeRageConfig.Enabled = false
+    KnifeRageCurrentPhase = "idle"
+    KnifeRageTarget = nil
+    KnifeRageCycleCount = 0
+    
+    -- S'assurer que le personnage n'est plus ancré
+    local character = LocalPlayer.Character
+    if character then
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if humanoidRootPart then
+            humanoidRootPart.Anchored = false
+        end
+    end
+    
+    KnifeRageStatusText.Visible = false
+    KnifeRageStatusText.Text = "Knife Rage: Inactif"
+    
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid and KnifeRageOriginalWalkSpeed then
+            humanoid.WalkSpeed = KnifeRageOriginalWalkSpeed
+        end
+        
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if humanoidRootPart then
+            humanoidRootPart.Anchored = false
+        end
+    end
+    
+    local camera = workspace.CurrentCamera
+    if camera then
+        if KnifeRageConfig.OriginalCameraType then
+            camera.CameraType = KnifeRageConfig.OriginalCameraType
+        end
+    end
+    
+    if KnifeRageConfig.Connection then
+        KnifeRageConfig.Connection:Disconnect()
+        KnifeRageConfig.Connection = nil
+    end
+end
+
+local KnifeRageGroupBox = Tabs.Rage:AddGroupbox({
+    Side = "Right",
+    Name = "Knife Rage",
+})
+
+KnifeRageGroupBox:AddToggle("KnifeRageEnabled", {
+    Text = "Activer Knife Rage",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            EnableKnifeRage()
+        else
+            DisableKnifeRage()
+        end
+    end,
+}):AddKeyPicker("KnifeRageKeybind", {
+    Default = "None",
+    SyncToggleState = true,
+    Mode = "Toggle",
+    Text = "Keybind Knife Rage",
+})
+
+KnifeRageGroupBox:AddSlider("KnifeRageApproachDistance", {
+    Text = "Distance derrière",
+    Default = 3,
+    Min = 1,
+    Max = 10,
+    Rounding = 0,
+    Callback = function(Value)
+        KnifeRageConfig.ApproachDistance = Value
+    end,
+})
+
+KnifeRageGroupBox:AddSlider("KnifeRageEngagementTime", {
+    Text = "Temps d'engagement (s)",
+    Default = 0.1,
+    Min = 0.05,
+    Max = 0.5,
+    Rounding = 2,
+    Callback = function(Value)
+        KnifeRageConfig.EngagementTime = Value
+    end,
+})
+
+KnifeRageGroupBox:AddSlider("KnifeRageAttackCooldown", {
+    Text = "Cooldown attaque (s)",
+    Default = 0.3,
+    Min = 0.1,
+    Max = 2,
+    Rounding = 1,
+    Callback = function(Value)
+        KnifeRageConfig.AttackCooldown = Value
+    end,
+})
+
+KnifeRageGroupBox:AddDropdown("KnifeRageTargetPart", {
+    Values = {"HumanoidRootPart", "Head", "UpperTorso", "LowerTorso"},
+    Default = "HumanoidRootPart",
+    Text = "Partie ciblée",
+    Callback = function(Value)
+        KnifeRageConfig.TargetPart = Value
+    end,
+})
+
+KnifeRageGroupBox:AddToggle("KnifeRageTeamCheck", {
+    Text = "Team Check",
+    Default = true,
+    Callback = function(Value)
+        KnifeRageConfig.TeamCheck = Value
+    end,
+})
+
+KnifeRageGroupBox:AddSlider("KnifeRageMinHealth", {
+    Text = "Santé minimale cible",
+    Default = 1,
+    Min = 1,
+    Max = 150,
+    Rounding = 0,
+    Callback = function(Value)
+        KnifeRageConfig.MinHealth = Value
+    end,
+})
+
+KnifeRageGroupBox:AddSlider("KnifeRageWalkSpeed", {
+    Text = "Vitesse de déplacement",
+    Default = 16,
+    Min = 1,
+    Max = 1000,
+    Rounding = 0,
+    Callback = function(Value)
+        KnifeRageConfig.WalkSpeed = Value
+        if KnifeRageConfig.Enabled then
+            local character = LocalPlayer.Character
+            if character then
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.WalkSpeed = Value
+                end
+            end
+        end
+    end,
+})
+
+KnifeRageGroupBox:AddDivider()
+
+KnifeRageGroupBox:AddToggle("KnifeRageForceSync", {
+    Text = "Forcer synchro serveur",
+    Default = true,
+    Callback = function(Value)
+        KnifeRageConfig.ForceSync = Value
+    end,
+})
+
+--=========================================================
+-- VISUAL
+--=========================================================
+local VisualGroupBox = Tabs.Visual:AddGroupbox({
+    Side = "Left",
+    Name = "Affichage",
+})
+
+VisualGroupBox:AddToggle("ShowFPS", {
+    Text = "Afficher les FPS",
+    Default = true,
+})
+
+
+
+--=======================================================================================
+--Auto FFA AMMO AND HEAL
+--======================================================================================
+
+local CounterBox = Tabs.Counter:AddGroupbox({
+    Side = "Left",
+    Name = "Automation",
+})
+
+
+--======================================================================================
+--Desyn module
+--======================================================================================
+
+local DesyncPosition = Tabs.Counter:AddGroupbox({
+    Side = "Left",
+    Name = "Desync Position",
+})
+
+
+local radiusx = 5
+local radiusy = 5
+local radiusz = 5
+
+local rs = game:GetService("RunService")
+local conn
+
+
+DesyncPosition:AddToggle({
+    Name = "AntiAim",
+    Currentvalue = false,
+    Flag = "AntiAimToggle",
+    Callback = function(Value)
+        if Value then
+            if conn then
+                conn:Disconnect()
+                conn = nil
+            end
+
+            conn = rs.Heartbeat:Connect(function(a0: number)
+                local char = game:GetService("Players").LocalPlayer.Character
+                if not char then return end 
+
+                local hrp = char:FindFirstChild("HumanoidRootPart", true)
+                if not hrp then 
+                    hrp = char.PrimaryPart
+                    if not hrp then
+                        return
+                    end                
+                end
+
+                local oldcf = hrp.CFrame
+                local oldvel = hrp.Velocity
+                local oldrootvel = hrp.RotVelocity
+                local randomness = CFrame.new(Vector3.new(math.random(1,radiusx),math.random(1,radiusy),math.random(1,radiusz)))
+
+                hrp.CFrame = hrp.CFrame * randomness
+                rs:BindToRenderStep("10111", 101, function(delta: number)
+                    hrp.CFrame = oldcf
+                    hrp.Velocity = oldvel
+                    hrp.RotVelocity = oldrootvel
+                    rs:UnbindFromRenderStep("10111")
+                end)
+            end)
+        else
+            if conn then
+                conn:Disconnect()
+                conn = nil
+            end
+        end
+    end
+})
+
+DesyncPosition:AddSlider({
+    name = "X Radius",
+    range = {1, 100},
+    increment = 1,
+    value = 5,
+    flag = "XRadius",
+    callback = function(Value)
+        radiusx = Value
+    end
+})
+
+DesyncPosition:AddSlider({
+    name = "Y Radius",
+    range = {1, 100},
+    increment = 1,
+    value = 5,
+    flag = "YRadius",
+    callback = function(Value)
+        radiusy = Value
+    end
+})
+
+DesyncPosition:AddSlider({
+    name = "Z Radius",
+    range = {1, 100},
+    increment = 1,
+    value = 5,
+    flag = "ZRadius",
+    callback = function(Value)
+        radiusz = Value
+    end
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+local autoCollect = true
+
+CounterBox:AddToggle("AutoCollect", {
+    Text = "Auto Collect",
+    Default = true,
+    Callback = function(Value)
+        if autoCollect and obj.Name == "_drop" and obj:IsA("BasePart") then
+            obj.Anchored = true
+            obj.CFrame = CFrame.new(hrp.Position + Vector3.new(0, bounce, 0))
+            obj.Transparency = 1
+
+            for _, child in pairs(obj:GetDescendants()) do
+                if child:IsA("BasePart") or child:IsA("UnionOperation") or child:IsA("MeshPart") or child:IsA("SpecialMesh") then
+                    pcall(function()
+                        child.Transparency = 1
+                    end)
+                end
+
+                if child:IsA("BillboardGui") or child:IsA("SurfaceGui") or child:IsA("ParticleEmitter") or child:IsA("SelectionBox") then
+                    pcall(function()
+                        child.Enabled = false
+                    end)
+                end
+            end
+        end
+    end
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- ==========================
+-- ESP MODULE
+-- ==========================
+local ESP = nil
+local ESPLoaded = false
+
+-- Charger l'ESP avec protection contre les crashes
+local success, err = pcall(function()
+    ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/linemaster2/esp-library/main/library.lua"))()
+    ESPLoaded = true
+end)
+
+if not success then
+    warn("[ESP] Erreur de chargement: " .. tostring(err))
+    ESPLoaded = false
+end
+
+local ESPConfig = {
+    Enabled = false,
+    ShowBox = false,
+    ShowName = false,
+    ShowHealth = false,
+    ShowTracer = false,
+    ShowDistance = false,
+    ShowSkeletons = false,
+    TeamCheck = false,
+    WallCheck = false,
+    BoxType = "2D",
+    TracerPosition = "Bottom",
+    TracerThickness = 2,
+    
+    -- Couleurs
+    BoxColor = Color3.new(1, 1, 1),
+    BoxOutlineColor = Color3.new(1, 1, 1),
+    NameColor = Color3.new(1, 1, 1),
+    HealthOutlineColor = Color3.new(0, 0, 0),
+    HealthHighColor = Color3.new(0, 1, 0),
+    HealthLowColor = Color3.new(1, 0, 0),
+    TracerColor = Color3.new(1, 1, 1),
+    SkeletonsColor = Color3.new(1, 1, 1),
+}
+
+-- Initialiser les paramètres ESP uniquement si chargé avec succès
+if ESPLoaded and ESP then
+    local success, err = pcall(function()
+        ESP.Enabled = ESPConfig.Enabled
+        ESP.ShowBox = ESPConfig.ShowBox
+        ESP.ShowName = ESPConfig.ShowName
+        ESP.ShowHealth = ESPConfig.ShowHealth
+        ESP.ShowTracer = ESPConfig.ShowTracer
+        ESP.ShowDistance = ESPConfig.ShowDistance
+        ESP.ShowSkeletons = ESPConfig.ShowSkeletons
+        ESP.Teamcheck = ESPConfig.TeamCheck
+        ESP.WallCheck = ESPConfig.WallCheck
+        ESP.BoxType = ESPConfig.BoxType
+        ESP.TracerPosition = ESPConfig.TracerPosition
+        ESP.TracerThickness = ESPConfig.TracerThickness
+
+        -- Appliquer les couleurs
+        ESP.BoxColor = ESPConfig.BoxColor
+        ESP.BoxOutlineColor = ESPConfig.BoxOutlineColor
+        ESP.NameColor = ESPConfig.NameColor
+        ESP.HealthOutlineColor = ESPConfig.HealthOutlineColor
+        ESP.HealthHighColor = ESPConfig.HealthHighColor
+        ESP.HealthLowColor = ESPConfig.HealthLowColor
+        ESP.TracerColor = ESPConfig.TracerColor
+        ESP.SkeletonsColor = ESPConfig.SkeletonsColor
+    end)
+    
+    if not success then
+        warn("[ESP] Erreur d'initialisation: " .. tostring(err))
+        ESPLoaded = false
+    end
+end
+
+local ESPGroupBox = Tabs.Visual:AddGroupbox({
+    Side = "Left",
+    Name = "ESP Settings",
+})
+
+ESPGroupBox:AddToggle("ESPEnabled", {
+    Text = "Activer ESP",
+    Default = false,
+    Callback = function(Value)
+        ESPConfig.Enabled = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.Enabled = Value
+            end)
+        end
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPShowName", {
+    Text = "Afficher noms",
+    Default = false,
+    Callback = function(Value)
+        ESPConfig.ShowName = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.ShowName = Value
+            end)
+        end
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPShowBox", {
+    Text = "Afficher boîtes",
+    Default = false,
+    Callback = function(Value)
+        ESPConfig.ShowBox = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.ShowBox = Value
+            end)
+        end
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPShowHealth", {
+    Text = "Afficher santé",
+    Default = false,
+    Callback = function(Value)
+        ESPConfig.ShowHealth = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.ShowHealth = Value
+            end)
+        end
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPShowTracer", {
+    Text = "Afficher traceurs",
+    Default = false,
+    Callback = function(Value)
+        ESPConfig.ShowTracer = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.ShowTracer = Value
+            end)
+        end
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPShowSkeletons", {
+    Text = "Afficher squelettes",
+    Default = false,
+    Callback = function(Value)
+        ESPConfig.ShowSkeletons = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.ShowSkeletons = Value
+            end)
+        end
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPShowDistance", {
+    Text = "Afficher distance",
+    Default = false,
+    Callback = function(Value)
+        ESPConfig.ShowDistance = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.ShowDistance = Value
+            end)
+        end
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPTeamCheck", {
+    Text = "Team Check",
+    Default = false,
+    Callback = function(Value)
+        ESPConfig.TeamCheck = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.Teamcheck = Value
+            end)
+        end
+    end,
+})
+
+ESPGroupBox:AddToggle("ESPWallCheck", {
+    Text = "Wall Check",
+    Default = false,
+    Callback = function(Value)
+        ESPConfig.WallCheck = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.WallCheck = Value
+            end)
+        end
+    end,
+})
+
+ESPGroupBox:AddDivider()
+
+ESPGroupBox:AddDropdown("ESPBoxType", {
+    Values = {"2D", "Corner Box Esp"},
+    Default = "2D",
+    Text = "Type de boîte",
+    Callback = function(Value)
+        ESPConfig.BoxType = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.BoxType = Value
+            end)
+        end
+    end,
+})
+
+ESPGroupBox:AddDropdown("ESPTracerPosition", {
+    Values = {"Bottom", "Top", "Middle"},
+    Default = "Bottom",
+    Text = "Position traceur",
+    Callback = function(Value)
+        ESPConfig.TracerPosition = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.TracerPosition = Value
+            end)
+        end
+    end,
+})
+
+local ESPColorBox = Tabs.Visual:AddGroupbox({
+    Side = "Right",
+    Name = "ESP Couleurs",
+})
+
+ESPColorBox:AddLabel("Couleur boîte"):AddColorPicker("ESPBoxColor", {
+    Default = ESPConfig.BoxColor,
+    Title = "Couleur boîte",
+    Callback = function(Value)
+        ESPConfig.BoxColor = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.BoxColor = Value
+            end)
+        end
+    end,
+})
+
+ESPColorBox:AddLabel("Couleur contour boîte"):AddColorPicker("ESPBoxOutlineColor", {
+    Default = ESPConfig.BoxOutlineColor,
+    Title = "Couleur contour boîte",
+    Callback = function(Value)
+        ESPConfig.BoxOutlineColor = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.BoxOutlineColor = Value
+            end)
+        end
+    end,
+})
+
+ESPColorBox:AddLabel("Couleur nom"):AddColorPicker("ESPNameColor", {
+    Default = ESPConfig.NameColor,
+    Title = "Couleur nom",
+    Callback = function(Value)
+        ESPConfig.NameColor = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.NameColor = Value
+            end)
+        end
+    end,
+})
+
+ESPColorBox:AddLabel("Couleur traceur"):AddColorPicker("ESPTracerColor", {
+    Default = ESPConfig.TracerColor,
+    Title = "Couleur traceur",
+    Callback = function(Value)
+        ESPConfig.TracerColor = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.TracerColor = Value
+            end)
+        end
+    end,
+})
+
+ESPColorBox:AddLabel("Couleur squelette"):AddColorPicker("ESPSkeletonsColor", {
+    Default = ESPConfig.SkeletonsColor,
+    Title = "Couleur squelette",
+    Callback = function(Value)
+        ESPConfig.SkeletonsColor = Value
+        if ESPLoaded and ESP then
+            pcall(function()
+                ESP.SkeletonsColor = Value
+            end)
+        end
+    end,
+})
+
+-- ==========================
+-- MODS MODULE
+-- ==========================
+local ModsConfig = {
+    MeshFistEnabled = false,
+    WireframeColor = Color3.fromRGB(0, 255, 255),
+    Transparency = 0.7,
+    OriginalLeftHandMesh = nil,
+    OriginalRightHandMesh = nil,
+    LeftHandWireframe = nil,
+    RightHandWireframe = nil,
+    Connection = nil,
+}
+
+local function CreateWireframeMesh(part, color)
+    -- Créer un wireframe optimisé sans perdre de FPS
+    local wireframe = Instance.new("SpecialMesh")
+    wireframe.MeshType = Enum.MeshType.FileMesh
+    wireframe.TextureId = ""
+    wireframe.Color3 = color
+    wireframe.Transparency = ModsConfig.Transparency
+    
+    -- Utiliser les propriétés optimisées pour éviter la perte de FPS
+    wireframe.RenderFidelity = Enum.RenderFidelity.Performance
+    
+    return wireframe
+end
+
+local function ApplyMeshToPart(part, meshId, isWireframe)
+    if not part then return false end
+    
+    local mesh = part:FindFirstChildOfClass("SpecialMesh")
+    if not mesh then
+        mesh = Instance.new("SpecialMesh")
+        mesh.Parent = part
+    end
+    
+    -- Supprimer les anciens meshs wireframes
+    for _, child in pairs(part:GetChildren()) do
+        if child:IsA("SpecialMesh") and child ~= mesh then
+            child:Destroy()
+        end
+    end
+    
+    mesh.MeshId = "rbxassetid://12307734932, 12307583853" .. meshId
+    mesh.MeshType = Enum.MeshType.FileMesh
+    
+    if isWireframe then
+        mesh.Transparency = 0.3
+        mesh.Color3 = ModsConfig.WireframeColor
+    else
+        mesh.Transparency = ModsConfig.Transparency
+    end
+    
+    mesh.RenderFidelity = Enum.RenderFidelity.Performance
+    
+    return true
+end
+
+local function ApplyMeshFist()
+    local character = LocalPlayer.Character
+    if not character then 
+        warn("[MeshFist] Personnage non trouvé")
+        return 
+    end
+    
+    -- Approche différente : créer des parties personnalisées pour les meshs
+    local leftHandMesh = character:FindFirstChild("LeftHandMesh")
+    local rightHandMesh = character:FindFirstChild("RightHandMesh")
+    
+    -- Créer les parties de mesh si elles n'existent pas
+    if not leftHandMesh then
+        leftHandMesh = Instance.new("Part")
+        leftHandMesh.Name = "LeftHandMesh"
+        leftHandMesh.Size = Vector3.new(1, 1, 1)
+        leftHandMesh.Transparency = 1
+        leftHandMesh.CanCollide = false
+        leftHandMesh.Anchored = true
+        leftHandMesh.Parent = character
+        print("[MeshFist] Création partie main gauche")
+    end
+    
+    if not rightHandMesh then
+        rightHandMesh = Instance.new("Part")
+        rightHandMesh.Name = "RightHandMesh"
+        rightHandMesh.Size = Vector3.new(1, 1, 1)
+        rightHandMesh.Transparency = 1
+        rightHandMesh.CanCollide = false
+        rightHandMesh.Anchored = true
+        rightHandMesh.Parent = character
+        print("[MeshFist] Création partie main droite")
+    end
+    
+    -- Attacher les meshs aux mains existantes pour le suivi
+    local actualLeftHand = character:FindFirstChild("LeftHand") or character:FindFirstChild("leftHand") or character:FindFirstChild("Left Arm")
+    local actualRightHand = character:FindFirstChild("RightHand") or character:FindFirstChild("rightHand") or character:FindFirstChild("Right Arm")
+    
+    -- Appliquer le mesh à la partie personnalisée main gauche
+    local leftMesh = leftHandMesh:FindFirstChildOfClass("SpecialMesh")
+    if not leftMesh then
+        leftMesh = Instance.new("SpecialMesh")
+        leftMesh.Parent = leftHandMesh
+    end
+    
+    leftMesh.MeshId = "rbxassetid://12307734932"
+    leftMesh.MeshType = Enum.MeshType.FileMesh
+    leftMesh.Transparency = ModsConfig.Transparency
+    leftMesh.Color3 = ModsConfig.WireframeColor
+    leftMesh.RenderFidelity = Enum.RenderFidelity.Performance
+    print("[MeshFist] Mesh 12307734932 appliqué")
+    
+    -- Appliquer le mesh à la partie personnalisée main droite
+    local rightMesh = rightHandMesh:FindFirstChildOfClass("SpecialMesh")
+    if not rightMesh then
+        rightMesh = Instance.new("SpecialMesh")
+        rightMesh.Parent = rightHandMesh
+    end
+    
+    rightMesh.MeshId = "rbxassetid://12307583853"
+    rightMesh.MeshType = Enum.MeshType.FileMesh
+    rightMesh.Transparency = ModsConfig.Transparency
+    rightMesh.Color3 = ModsConfig.WireframeColor
+    rightMesh.RenderFidelity = Enum.RenderFidelity.Performance
+    print("[MeshFist] Mesh 12307583853 appliqué")
+    
+    -- Créer un suivi pour positionner les meshs sur les mains réelles
+    if actualLeftHand and actualRightHand then
+        if ModsConfig.Connection then
+            ModsConfig.Connection:Disconnect()
+        end
+        
+        ModsConfig.Connection = RunService.RenderStepped:Connect(function()
+            if not ModsConfig.MeshFistEnabled then return end
+            
+            if actualLeftHand and leftHandMesh then
+                leftHandMesh.CFrame = actualLeftHand.CFrame
+            end
+            
+            if actualRightHand and rightHandMesh then
+                rightHandMesh.CFrame = actualRightHand.CFrame
+            end
+        end)
+    else
+        warn("[MeshFist] Mains réelles non trouvées pour le suivi")
+    end
+end
+
+local function RemoveMeshFist()
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    -- Supprimer les parties personnalisées
+    local leftHandMesh = character:FindFirstChild("LeftHandMesh")
+    if leftHandMesh then
+        leftHandMesh:Destroy()
+    end
+    
+    local rightHandMesh = character:FindFirstChild("RightHandMesh")
+    if rightHandMesh then
+        rightHandMesh:Destroy()
+    end
+    
+    -- Nettoyer les wireframes
+    if ModsConfig.LeftHandWireframe then
+        ModsConfig.LeftHandWireframe:Destroy()
+        ModsConfig.LeftHandWireframe = nil
+    end
+    
+    if ModsConfig.RightHandWireframe then
+        ModsConfig.RightHandWireframe:Destroy()
+        ModsConfig.RightHandWireframe = nil
+    end
+end
+
+local function EnableMeshFist()
+    ModsConfig.MeshFistEnabled = true
+    ApplyMeshFist()
+    
+    -- Surveiller les changements de personnage
+    if ModsConfig.Connection then
+        ModsConfig.Connection:Disconnect()
+    end
+    
+    ModsConfig.Connection = LocalPlayer.CharacterAdded:Connect(function()
+        task.wait(1) -- Attendre que le personnage soit chargé
+        if ModsConfig.MeshFistEnabled then
+            ApplyMeshFist()
+        end
+    end)
+end
+
+local function DisableMeshFist()
+    ModsConfig.MeshFistEnabled = false
+    RemoveMeshFist()
+    
+    if ModsConfig.Connection then
+        ModsConfig.Connection:Disconnect()
+        ModsConfig.Connection = nil
+    end
+end
+
+local ModsGroupBox = Tabs.Visual:AddGroupbox({
+    Side = "Left",
+    Name = "Mods",
+})
+
+ModsGroupBox:AddToggle("MeshFistEnabled", {
+    Text = "Mesh Fist",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            EnableMeshFist()
+        else
+            DisableMeshFist()
+        end
+    end,
+})
+
+ModsGroupBox:AddLabel("Couleur fil lumineux"):AddColorPicker("MeshFistWireframeColor", {
+    Default = ModsConfig.WireframeColor,
+    Title = "Couleur fil lumineux",
+    Callback = function(Value)
+        ModsConfig.WireframeColor = Value
+        if ModsConfig.MeshFistEnabled then
+            ApplyMeshFist()
+        end
+    end,
+})
+
+ModsGroupBox:AddSlider("MeshFistTransparency", {
+    Text = "Transparence",
+    Default = 0.7,
+    Min = 0.1,
+    Max = 1,
+    Rounding = 1,
+    Callback = function(Value)
+        ModsConfig.Transparency = Value
+        if ModsConfig.MeshFistEnabled then
+            ApplyMeshFist()
+        end
+    end,
+})
+
+local VisualColorBox = Tabs.Visual:AddGroupbox({
+    Side = "Right",
+    Name = "Couleurs",
+})
+VisualColorBox:AddLabel("Couleur principale"):AddColorPicker("MainColor", {
+    Default = Color3.fromRGB(255, 0, 0),
+    Title = "Couleur principale",
+    Callback = function(Value)
+        print("Couleur choisie :", Value)
+    end,
+})
+
+--// Skybox
+local SkyboxBox = Tabs.Visual:AddGroupbox({
+    Side = "Left",
+    Name = "Skybox",
+})
+
+-- Technique "single texture" (le même ID sur les 6 faces).
+-- Ces IDs sont des assets publics trouvés dans des scripts partagés en ligne
+-- (devforum/pastebin). Roblox modère régulièrement les assets : certains
+-- peuvent finir invalides avec le temps. Utilise le champ "ID personnalisé"
+-- plus bas si l'un d'eux ne s'affiche plus.
+local SkyboxList = {
+    ["Défaut"]           = nil, -- remet le ciel d'origine du jeu
+    ["Troll (Rouge)"]    = "rbxassetid://13712942",
+    ["Néant (Noir)"]     = "rbxassetid://201208408",
+    ["Anime Ciel 1"]     = "rbxassetid://21076945",
+    ["Anime Ciel 2"]     = "rbxassetid://21077007",
+    ["Anime Ciel 3"]     = "rbxassetid://21077125",
+    ["Anime Ciel 4"]     = "rbxassetid://21077227",
+    ["Ciel Classique"]   = "rbxassetid://156956351",
+    ["Sombre 2"]         = "rbxassetid://586081964",
+    ["Ciel Bleu"]        = "rbxassetid://156666148",
+    ["Coucher de Soleil"]= "rbxassetid://37497715",
+    ["Coucher de Soleil 2"] = "rbxassetid://627302570",
+    ["Espace"]           = "rbxassetid://19587080",
+    ["Galaxie"]          = "rbxassetid://9016402918",
+
+    -- Sets complets 6 faces distinctes (plus qualitatif que "single texture")
+    ["Crépuscule (6 faces)"] = {
+        Bk = "rbxassetid://12064107",
+        Dn = "rbxassetid://12064152",
+        Ft = "rbxassetid://12064121",
+        Lf = "rbxassetid://12063984",
+        Rt = "rbxassetid://12064115",
+        Up = "rbxassetid://12064131",
+    },
+    ["Ciel Complet (6 faces)"] = {
+        Bk = "rbxassetid://159454299",
+        Up = "rbxassetid://159454288",
+        Rt = "rbxassetid://159454300",
+        Lf = "rbxassetid://159454286",
+        Ft = "rbxassetid://159454293",
+        Dn = "rbxassetid://159454296",
+    },
+}
+
+local function ApplySkybox(idOrSet)
+    local existingSky = Lighting:FindFirstChildOfClass("Sky")
+    if existingSky then
+        existingSky:Destroy()
+    end
+
+    if not idOrSet then return end
+
+    local sky = Instance.new("Sky")
+
+    if type(idOrSet) == "table" then
+        -- Set complet avec les 6 faces différentes
+        sky.SkyboxBk = idOrSet.Bk
+        sky.SkyboxDn = idOrSet.Dn
+        sky.SkyboxFt = idOrSet.Ft
+        sky.SkyboxLf = idOrSet.Lf
+        sky.SkyboxRt = idOrSet.Rt
+        sky.SkyboxUp = idOrSet.Up
+    else
+        -- Même texture sur les 6 faces
+        sky.SkyboxBk = idOrSet
+        sky.SkyboxDn = idOrSet
+        sky.SkyboxFt = idOrSet
+        sky.SkyboxLf = idOrSet
+        sky.SkyboxRt = idOrSet
+        sky.SkyboxUp = idOrSet
+    end
+
+    sky.Parent = Lighting
+end
+
+local SkyboxNames = {}
+for name in pairs(SkyboxList) do
+    table.insert(SkyboxNames, name)
+end
+
+SkyboxBox:AddDropdown("SkyboxSelect", {
+    Values = SkyboxNames,
+    Default = "Défaut",
+    Text = "Choisir la skybox",
+    Callback = function(Value)
+        ApplySkybox(SkyboxList[Value])
+        print("Skybox appliquée :", Value)
+    end,
+})
+
+SkyboxBox:AddInput("CustomSkyboxID", {
+    Text = "ID Skybox personnalisé",
+    Default = "",
+    Placeholder = "ex: 13712942",
+    Numeric = false,
+    Finished = true,
+    Callback = function(Value)
+        if Value == "" then return end
+        local id = "rbxassetid://" .. Value:gsub("%D", "")
+        ApplySkybox(id)
+        print("Skybox custom appliquée :", id)
+    end,
+})
+
+--====================================================================
+--UNLOCK ALL SKINS
+--====================================================================
+local PrimaryTabbox = Tabs.SkinChanger:AddLeftTabbox()
+local SecondaryTabbox = Tabs.SkinChanger:AddRightTabbox()
+
+local Primary = PrimaryTabbox:AddTab("Primary")
+local Secondary = PrimaryTabbox:AddTab("Secondary")
+
+local Melee = SecondaryTabbox:AddTab("Melee")
+local Utility = SecondaryTabbox:AddTab("Utility")
+
+Primary:AddToggle("PrimaryToggle", {
+    Text = "Enable Primary"
+})
+
+Secondary:AddDropdown("SecondaryDropdown", {
+    Values = {"A", "B", "C"},
+    Default = 1,
+    Text = "Secondary"
+})
+
+Melee:AddButton({
+    Text = "Test",
+    Func = function()
+        print("Clicked")
+    end
+})
+
+Utility:AddSlider("UtilitySlider", {
+    Text = "Speed",
+    Default = 10,
+    Min = 0,
+    Max = 100,
+    Rounding = 0
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- ==========================
+-- VISUAL EFFECTS
+-- ==========================
+local VisualEffectsConfig = {
+    AntiFlash = false,
+    NoMuzzleFlash = false,
+    NoBobbing = false,
+    HitSound = false,
+    HitSoundId = "rbxassetid://6918290163",
+    BulletTracer = false,
+    BulletTracerColor = Color3.fromRGB(255, 255, 0),
+    OriginalWalkOffset = nil,
+    Connection = nil,
+}
+
+local function EnableAntiFlash()
+    -- Désactiver les effets de flash (post-processing)
+    local lighting = game:GetService("Lighting")
+    lighting.Brightness = 2
+    lighting.EnvironmentDiffuseScale = 1
+    lighting.EnvironmentSpecularScale = 1
+    lighting.GlobalShadows = true
+end
+
+local function DisableAntiFlash()
+    local lighting = game:GetService("Lighting")
+    lighting.Brightness = 2
+    lighting.EnvironmentDiffuseScale = 1
+    lighting.EnvironmentSpecularScale = 1
+end
+
+local function EnableNoMuzzleFlash()
+    -- Supprimer les effets de flash des armes
+    local character = LocalPlayer.Character
+    if character then
+        for _, part in pairs(character:GetDescendants()) do
+            if part.Name:lower():find("flash") or part.Name:lower():find("muzzle") then
+                if part:IsA("BasePart") then
+                    part.Transparency = 1
+                elseif part:IsA("PointLight") or part:IsA("SpotLight") then
+                    part.Enabled = false
+                end
+            end
+        end
+    end
+end
+
+local function DisableNoMuzzleFlash()
+    -- Restaurer les effets de flash
+    local character = LocalPlayer.Character
+    if character then
+        for _, part in pairs(character:GetDescendants()) do
+            if part.Name:lower():find("flash") or part.Name:lower():find("muzzle") then
+                if part:IsA("BasePart") then
+                    part.Transparency = 0
+                elseif part:IsA("PointLight") or part:IsA("SpotLight") then
+                    part.Enabled = true
+                end
+            end
+        end
+    end
+end
+
+local function EnableNoBobbing()
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            VisualEffectsConfig.OriginalWalkOffset = humanoid.WalkOffset
+            humanoid.WalkOffset = 0
+        end
+    end
+end
+
+local function DisableNoBobbing()
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            if VisualEffectsConfig.OriginalWalkOffset then
+                humanoid.WalkOffset = VisualEffectsConfig.OriginalWalkOffset
+            else
+                humanoid.WalkOffset = 0.1
+            end
+        end
+    end
+end
+
+local function PlayHitSound()
+    if VisualEffectsConfig.HitSound then
+        local sound = Instance.new("Sound")
+        sound.SoundId = VisualEffectsConfig.HitSoundId
+        sound.Volume = 0.5
+        sound.Parent = LocalPlayer.Character or LocalPlayer
+        sound:Play()
+        sound.Ended:Connect(function()
+            sound:Destroy()
+        end)
+    end
+end
+
+local VisualEffectsGroupBox = Tabs.Visual:AddGroupbox({
+    Side = "Left",
+    Name = "Visual Effects",
+})
+
+VisualEffectsGroupBox:AddToggle("AntiFlashEnabled", {
+    Text = "Anti Flash",
+    Default = false,
+    Callback = function(Value)
+        VisualEffectsConfig.AntiFlash = Value
+        if Value then
+            EnableAntiFlash()
+        else
+            DisableAntiFlash()
+        end
+    end,
+})
+
+VisualEffectsGroupBox:AddToggle("NoMuzzleFlashEnabled", {
+    Text = "No Muzzle Flash",
+    Default = false,
+    Callback = function(Value)
+        VisualEffectsConfig.NoMuzzleFlash = Value
+        if Value then
+            EnableNoMuzzleFlash()
+        else
+            DisableNoMuzzleFlash()
+        end
+    end,
+})
+
+VisualEffectsGroupBox:AddToggle("NoBobbingEnabled", {
+    Text = "No Bobbing",
+    Default = false,
+    Callback = function(Value)
+        VisualEffectsConfig.NoBobbing = Value
+        if Value then
+            EnableNoBobbing()
+        else
+            DisableNoBobbing()
+        end
+    end,
+})
+
+VisualEffectsGroupBox:AddButton({
+    Text = "Hitmarker Sound",
+    Func = function()
+        local soundtochange = "rbxassetid://75881627871349" --Rust Sound
+
+        game:GetService("Players").LocalPlayer.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem.ClientViewModel.ChildAdded:Connect(function(v)
+            if v:IsA("Sound") and v.SoundId ~= "rbxassetid://16537449730" then
+                v.SoundId = soundtochange
+                v.Pitch = 1
+                v.Volume = 1
+            end
+        end)
+    end
+})
+
+
+
+
+VisualEffectsGroupBox:AddInput("HitSoundId", {
+    Text = "Hit Sound ID",
+    Default = "6918290163",
+    Placeholder = "Sound ID",
+    Numeric = false,
+    Finished = true,
+    Callback = function(Value)
+        if Value ~= "" then
+            VisualEffectsConfig.HitSoundId = "rbxassetid://" .. Value
+        end
+    end,
+})
+
+VisualEffectsGroupBox:AddToggle("BulletTracerEnabled", {
+    Text = "Bullet Tracer",
+    Default = false,
+    Callback = function(Value)
+        VisualEffectsConfig.BulletTracer = Value
+    end,
+})
+
+VisualEffectsGroupBox:AddLabel("Couleur traceur"):AddColorPicker("BulletTracerColor", {
+    Default = VisualEffectsConfig.BulletTracerColor,
+    Title = "Couleur traceur",
+    Callback = function(Value)
+        VisualEffectsConfig.BulletTracerColor = Value
+    end,
+})
+
+-- Surveiller les changements de personnage pour No Muzzle Flash
+LocalPlayer.CharacterAdded:Connect(function()
+    if VisualEffectsConfig.NoMuzzleFlash then
+        task.wait(1)
+        EnableNoMuzzleFlash()
+    end
+    if VisualEffectsConfig.NoBobbing then
+        task.wait(1)
+        EnableNoBobbing()
+    end
+end)
+
+--=========================================================
+-- FOV VISUEL (formes géométriques custom + dégradé animé)
+--=========================================================
+local FOVBox = Tabs.Visual:AddGroupbox({
+    Side = "Right",
+    Name = "FOV Visuel",
+})
+
+local FOVShapes = {
+    ["Cercle"]    = 32,
+    ["Hexagone"]  = 6,
+    ["Octogone"]  = 8,
+    ["Losange"]   = 4,
+    ["Triangle"]  = 3,
+}
+
+local FOVSettings = {
+    Enabled = false,
+    Shape = "Hexagone",
+    Radius = 120,
+    Speed = 2,
+    Color1 = Color3.fromRGB(255, 0, 120),
+    Color2 = Color3.fromRGB(0, 180, 255),
+}
+
+-- Nombre de tranches utilisées pour le REMPLISSAGE (indépendant du nombre de
+-- coins de la forme) : plus c'est élevé, plus le dégradé paraît lisse et
+-- continu au lieu d'être visiblement découpé en facettes.
+local FOV_FILL_SEGMENTS = 72
+
+local FOVQuads = {}
+local FOVOutline = {}
+local FOVConnection = nil
+
+local function ClearFOVDrawings()
+    for _, quad in ipairs(FOVQuads) do
+        quad:Remove()
+    end
+    FOVQuads = {}
+
+    for _, line in ipairs(FOVOutline) do
+        line:Remove()
+    end
+    FOVOutline = {}
+end
+
+local function BuildFOVDrawings(sides)
+    ClearFOVDrawings()
+
+    -- Remplissage : toujours FOV_FILL_SEGMENTS tranches fines, peu importe
+    -- la forme, pour un dégradé lisse
+    for _ = 1, FOV_FILL_SEGMENTS do
+        local quad = Drawing.new("Quad")
+        quad.Filled = true
+        quad.Thickness = 1
+        quad.Visible = false
+        table.insert(FOVQuads, quad)
+    end
+
+    -- Contour : suit le vrai nombre de coins de la forme choisie
+    for _ = 1, sides do
+        local line = Drawing.new("Line")
+        line.Thickness = 2
+        line.Visible = false
+        table.insert(FOVOutline, line)
+    end
+end
+
+local function LerpColor(c1, c2, t)
+    return Color3.new(
+        c1.R + (c2.R - c1.R) * t,
+        c1.G + (c2.G - c1.G) * t,
+        c1.B + (c2.B - c1.B) * t
+    )
+end
+
+-- Retourne un point sur le pourtour du polygone (défini par "corners") à la
+-- fraction "t" (0 à 1) du périmètre total. Permet un échantillonnage fin
+-- indépendant du nombre de coins, pour un dégradé lisse le long du contour.
+local function GetPointOnPerimeter(corners, cumulativeLengths, totalLength, t)
+    local targetDist = t * totalLength
+    local n = #corners
+
+    for i = 1, n do
+        local segStart = cumulativeLengths[i]
+        local segEnd = cumulativeLengths[i + 1]
+        if targetDist <= segEnd or i == n then
+            local segLen = segEnd - segStart
+            local alpha = segLen > 0 and (targetDist - segStart) / segLen or 0
+            local p1 = corners[i]
+            local p2 = corners[(i % n) + 1]
+            return p1:Lerp(p2, alpha)
+        end
+    end
+
+    return corners[1]
+end
+
+local function StartFOVLoop()
+    if FOVConnection then
+        FOVConnection:Disconnect()
+        FOVConnection = nil
+    end
+
+    local sides = FOVShapes[FOVSettings.Shape]
+    BuildFOVDrawings(sides)
+
+    local t0 = tick()
+
+    FOVConnection = RunService.RenderStepped:Connect(function()
+        if not FOVSettings.Enabled then return end
+
+        local mouseLoc = UserInputService:GetMouseLocation()
+        local cx, cy = mouseLoc.X, mouseLoc.Y
+        local radius = FOVSettings.Radius
+        local elapsed = tick() - t0
+        local phase = (elapsed * FOVSettings.Speed) % 1
+        local center = Vector2.new(cx, cy)
+
+        -- Coins réels de la forme (pour le contour)
+        local corners = {}
+        for i = 0, sides - 1 do
+            local angle = (i / sides) * math.pi * 2 - math.pi / 2
+            corners[i + 1] = Vector2.new(
+                cx + math.cos(angle) * radius,
+                cy + math.sin(angle) * radius
+            )
+        end
+
+        -- Longueurs cumulées du périmètre (pour échantillonner uniformément)
+        local cumulativeLengths = { [1] = 0 }
+        local totalLength = 0
+        for i = 1, sides do
+            local p1 = corners[i]
+            local p2 = corners[(i % sides) + 1]
+            totalLength = totalLength + (p2 - p1).Magnitude
+            cumulativeLengths[i + 1] = totalLength
+        end
+
+        -- Contour (lignes suivant les vrais coins)
+        for i = 1, sides do
+            local p1 = corners[i]
+            local p2 = corners[(i % sides) + 1]
+            local t = ((i / sides) + phase) % 1
+            local color = LerpColor(FOVSettings.Color1, FOVSettings.Color2, (math.sin(t * math.pi * 2) + 1) / 2)
+
+            local line = FOVOutline[i]
+            line.From = p1
+            line.To = p2
+            line.Color = color
+            line.Transparency = 0
+            line.Visible = true
+        end
+
+        -- Remplissage : dégradé lisse à 40% d'opacité (Transparency = 0.6)
+        for i = 1, FOV_FILL_SEGMENTS do
+            local t1 = (i - 1) / FOV_FILL_SEGMENTS
+            local t2 = i / FOV_FILL_SEGMENTS
+
+            local p1 = GetPointOnPerimeter(corners, cumulativeLengths, totalLength, t1)
+            local p2 = GetPointOnPerimeter(corners, cumulativeLengths, totalLength, t2)
+
+            local colorT = ((t1 + t2) / 2 + phase) % 1
+            local color = LerpColor(FOVSettings.Color1, FOVSettings.Color2, (math.sin(colorT * math.pi * 2) + 1) / 2)
+
+            local quad = FOVQuads[i]
+            quad.PointA = center
+            quad.PointB = center
+            quad.PointC = p1
+            quad.PointD = p2
+            quad.Color = color
+            quad.Transparency = 0.6 -- 40% d'opacité
+            quad.Visible = true
+        end
+    end)
+end
+
+local function StopFOVLoop()
+    if FOVConnection then
+        FOVConnection:Disconnect()
+        FOVConnection = nil
+    end
+    ClearFOVDrawings()
+end
+
+FOVBox:AddToggle("FOVEnabled", {
+    Text = "Activer le FOV visuel",
+    Default = false,
+    Callback = function(Value)
+        FOVSettings.Enabled = Value
+        if Value then
+            StartFOVLoop()
+        else
+            StopFOVLoop()
+        end
+    end,
+})
+
+FOVBox:AddDropdown("FOVShape", {
+    Values = { "Cercle", "Hexagone", "Octogone", "Losange", "Triangle" },
+    Default = "Hexagone",
+    Text = "Forme",
+    Callback = function(Value)
+        FOVSettings.Shape = Value
+        if FOVSettings.Enabled then
+            StartFOVLoop()
+        end
+    end,
+})
+
+FOVBox:AddSlider("FOVRadius", {
+    Text = "Taille",
+    Default = 120,
+    Min = 20,
+    Max = 400,
+    Rounding = 0,
+    Callback = function(Value)
+        FOVSettings.Radius = Value
+    end,
+})
+
+FOVBox:AddSlider("FOVSpeed", {
+    Text = "Vitesse d'animation",
+    Default = 2,
+    Min = 0,
+    Max = 10,
+    Rounding = 1,
+    Callback = function(Value)
+        FOVSettings.Speed = Value
+    end,
+})
+
+FOVBox:AddLabel("Couleur 1"):AddColorPicker("FOVColor1", {
+    Default = FOVSettings.Color1,
+    Title = "Couleur 1",
+    Callback = function(Value)
+        FOVSettings.Color1 = Value
+    end,
+})
+
+FOVBox:AddLabel("Couleur 2"):AddColorPicker("FOVColor2", {
+    Default = FOVSettings.Color2,
+    Title = "Couleur 2",
+    Callback = function(Value)
+        FOVSettings.Color2 = Value
+    end,
+})
+
+--=========================================================
+-- PLAYER
+--=========================================================
+
+
+
+
+local GroundSpamGroupBox = Tabs.Rage:AddLeftGroupbox("Ground Spam")
+
+
+-- ==========================
+-- GROUND SPAM
+-- ==========================
+local GroundSpamPlayers = game:GetService("Players")
+local GroundSpamLocalPlayer = GroundSpamPlayers.LocalPlayer
+local GroundSpamRunService = game:GetService("RunService")
+
+local GroundSpamConfig = {
+	Enabled = false,
+	Depth = 2, -- Profondeur dans le sol
+	StretchAmount = 2, -- Facteur d'allongement
+	LookAtSky = true, -- Regarder vers le ciel
+	PreventDeath = true, -- EmpÃªcher la mort
+	ForceSync = true, -- Forcer la synchronisation serveur
+	SyncDelay = 0.016, -- DÃ©lai pour synchronisation serveur
+	OriginalPosition = nil, -- Sauvegarder la position originale
+	TargetPosition = nil, -- Position cible dans le sol (fixe)
+	Anchor = false, -- Plus d'ancrage pour permettre la rÃ©plication rÃ©seau
+	TeleportDone = false, -- Indicateur si la tÃ©lÃ©portation est faite
+	UseMoveTo = true, -- Utiliser Humanoid:MoveTo() pour la rÃ©plication serveur
+}
+
+local GroundSpamConnection = nil
+local GroundSpamOriginalTransparency = {}
+local GroundSpamOriginalSize = {}
+
+local function EnableGroundSpam()
+	GroundSpamConfig.Enabled = true
+	GroundSpamConfig.TeleportDone = false
+	
+	local character = GroundSpamLocalPlayer.Character
+	if not character then return end
+	
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return end
+	
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+	
+	-- Sauvegarder la position originale avant de tÃ©lÃ©porter
+	GroundSpamConfig.OriginalPosition = humanoidRootPart.Position
+	
+	-- Calculer la position cible dans le sol (une seule fois)
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = {character}
+	
+	local rayResult = workspace:Raycast(humanoidRootPart.Position, Vector3.new(0, -50, 0), rayParams)
+	
+	if rayResult then
+		GroundSpamConfig.TargetPosition = rayResult.Position - Vector3.new(0, GroundSpamConfig.Depth, 0)
+	else
+		GroundSpamConfig.TargetPosition = GroundSpamConfig.OriginalPosition - Vector3.new(0, GroundSpamConfig.Depth, 0)
+	end
+	
+	-- Sauvegarder les propriÃ©tÃ©s originales des parties du corps
+	for _, part in pairs(character:GetDescendants()) do
+		if part:IsA("BasePart") then
+			GroundSpamOriginalTransparency[part] = part.Transparency
+			GroundSpamOriginalSize[part] = part.Size
+		end
+	end
+	
+	if GroundSpamConnection then
+		GroundSpamConnection:Disconnect()
+	end
+	
+	-- Boucle continue pour rester stable dans le sol avec rÃ©plication serveur
+	GroundSpamConnection = GroundSpamRunService.RenderStepped:Connect(function()
+		if not GroundSpamConfig.Enabled then return end
+		
+		local character = GroundSpamLocalPlayer.Character
+		if not character then return end
+		
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		if not humanoidRootPart then return end
+		
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if not humanoid then return end
+		
+		-- Garder no clip actif en permanence
+		for _, part in pairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+			end
+		end
+		
+		-- NE PAS ancrer pour permettre la rplication rÃ©seau
+		humanoidRootPart.Anchored = false
+		
+		-- TÃ©lÃ©porter une seule fois vers la position cible avec rÃ©plication serveur
+		if not GroundSpamConfig.TeleportDone and GroundSpamConfig.TargetPosition then
+			if GroundSpamConfig.UseMoveTo then
+				-- Utiliser Humanoid:MoveTo() pour la rÃ©plication serveur
+				humanoid:MoveTo(GroundSpamConfig.TargetPosition)
+			else
+				-- Utiliser CFrame direct (moins fiable pour la rÃ©plication)
+				humanoidRootPart.CFrame = CFrame.new(GroundSpamConfig.TargetPosition)
+			end
+			GroundSpamConfig.TeleportDone = true
+		end
+		
+		-- Continuer Ã  envoyer la position pour maintenir la rÃ©plication
+		if GroundSpamConfig.TeleportDone and GroundSpamConfig.TargetPosition then
+			if GroundSpamConfig.UseMoveTo then
+				humanoid:MoveTo(GroundSpamConfig.TargetPosition)
+			else
+				humanoidRootPart.CFrame = CFrame.new(GroundSpamConfig.TargetPosition)
+			end
+		end
+		
+		-- Forcer la synchronisation serveur
+		if GroundSpamConfig.ForceSync then
+			humanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+			humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+		end
+		
+		-- Allonger le personnage
+		for _, part in pairs(character:GetDescendants()) do
+			if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+				local originalSize = GroundSpamOriginalSize[part]
+				if originalSize then
+					part.Size = Vector3.new(originalSize.X, originalSize.Y * GroundSpamConfig.StretchAmount, originalSize.Z)
+				end
+			end
+		end
+		
+		-- Regarder vers le ciel
+		if GroundSpamConfig.LookAtSky then
+			humanoidRootPart.CFrame = CFrame.new(humanoidRootPart.Position) * CFrame.Angles(math.rad(-90), 0, 0)
+		end
+		
+		-- EmpÃªcher la mort
+		if GroundSpamConfig.PreventDeath then
+			humanoid.Health = math.max(humanoid.Health, 1)
+		end
+	end)
+end
+
+local function DisableGroundSpam()
+	GroundSpamConfig.Enabled = false
+	
+	local character = GroundSpamLocalPlayer.Character
+	if character then
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		
+		-- Remonter Ã  la position originale
+		if humanoidRootPart and GroundSpamConfig.OriginalPosition then
+			humanoidRootPart.CFrame = CFrame.new(GroundSpamConfig.OriginalPosition)
+		end
+		
+		-- DÃ©sancrer le personnage
+		if GroundSpamConfig.Anchor then
+			if humanoidRootPart then
+				humanoidRootPart.Anchored = false
+			end
+		end
+		
+		-- Restaurer les collisions immÃ©diatement
+		for _, part in pairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = true
+			end
+		end
+		
+		-- Restaurer la taille originale
+		for _, part in pairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				if GroundSpamOriginalSize[part] then
+					part.Size = GroundSpamOriginalSize[part]
+				end
+				
+				-- Restaurer la transparence originale
+				if GroundSpamOriginalTransparency[part] then
+					part.Transparency = GroundSpamOriginalTransparency[part]
+				end
+			end
+		end
+	end
+	
+	-- Nettoyer les tables
+	GroundSpamOriginalTransparency = {}
+	GroundSpamOriginalSize = {}
+	GroundSpamConfig.OriginalPosition = nil
+	GroundSpamConfig.TargetPosition = nil
+	GroundSpamConfig.TeleportDone = false
+	
+	if GroundSpamConnection then
+		GroundSpamConnection:Disconnect()
+		GroundSpamConnection = nil
+	end
+end
+
+-- Interface Ground Spam
+GroundSpamGroupBox:AddToggle('GroundSpamEnabled', {
+    Text = 'Activer Ground Spam',
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            EnableGroundSpam()
+        else
+            DisableGroundSpam()
+        end
+    end
+})
+
+GroundSpamGroupBox:AddLabel('Keybind Ground Spam'):AddKeyPicker('GroundSpamKeybind', {
+    Default = 'None',
+    Mode = 'Toggle',
+    Text = 'Keybind Ground Spam',
+    Callback = function()
+        local currentState = Toggles.GroundSpamEnabled.Value
+        Toggles.GroundSpamEnabled:SetValue(not currentState)
+        
+        if not currentState then
+            EnableGroundSpam()
+        else
+            DisableGroundSpam()
+        end
+    end
+})
+
+GroundSpamGroupBox:AddSlider('GroundSpamDepth', {
+    Text = 'Profondeur dans le sol',
+    Default = 2,
+    Min = 1,
+    Max = 5,
+    Rounding = 0,
+    Callback = function(Value)
+        GroundSpamConfig.Depth = Value
+    end
+})
+
+GroundSpamGroupBox:AddSlider('GroundSpamStretchAmount', {
+    Text = 'Facteur d\'allongement',
+    Default = 2,
+    Min = 1,
+    Max = 5,
+    Rounding = 1,
+    Callback = function(Value)
+        GroundSpamConfig.StretchAmount = Value
+    end
+})
+
+GroundSpamGroupBox:AddToggle('GroundSpamLookAtSky', {
+    Text = 'Regarder vers le ciel',
+    Default = true,
+    Callback = function(Value)
+        GroundSpamConfig.LookAtSky = Value
+    end
+})
+
+GroundSpamGroupBox:AddToggle('GroundSpamPreventDeath', {
+    Text = 'EmpÃªcher la mort',
+    Default = true,
+    Callback = function(Value)
+        GroundSpamConfig.PreventDeath = Value
+    end
+})
+
+GroundSpamGroupBox:AddToggle('GroundSpamAnchor', {
+    Text = 'Ancrer (peut bloquer la réplication)',
+    Default = false,
+    Callback = function(Value)
+        GroundSpamConfig.Anchor = Value
+    end
+})
+
+GroundSpamGroupBox:AddToggle('GroundSpamUseMoveTo', {
+    Text = 'Utiliser MoveTo (réplication serveur)',
+    Default = true,
+    Callback = function(Value)
+        GroundSpamConfig.UseMoveTo = Value
+    end
+})
+
+
+
+
+
+GroundSpamGroupBox:AddDivider()
+
+GroundSpamGroupBox:AddToggle('GroundSpamForceSync', {
+    Text = 'Forcer synchro serveur',
+    Default = true,
+    Callback = function(Value)
+        GroundSpamConfig.ForceSync = Value
+    end
+})
+
+GroundSpamGroupBox:AddSlider('GroundSpamSyncDelay', {
+    Text = 'Délai synchro serveur (s)',
+    Default = 0.016,
+    Min = 0.001,
+    Max = 0.1,
+    Rounding = 3,
+    Callback = function(Value)
+        GroundSpamConfig.SyncDelay = Value
+    end
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- ==========================
+-- WALKSPEED
+-- ==========================
+local WalkSpeedGroupBox = Tabs.Player:AddGroupbox({
+    Side = "Left",
+    Name = "WalkSpeed",
+})
+
+local WalkSpeedConfig = {
+    Enabled = false,
+    Value = 32,
+    OriginalWalkSpeed = 16,
+    Connection = nil,
+}
+
+local function SaveOriginalWalkSpeed()
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            WalkSpeedConfig.OriginalWalkSpeed = humanoid.WalkSpeed
+        end
+    end
+end
+
+local function ApplyWalkSpeed()
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    
+    if WalkSpeedConfig.Enabled then
+        humanoid.WalkSpeed = WalkSpeedConfig.Value
+    else
+        humanoid.WalkSpeed = WalkSpeedConfig.OriginalWalkSpeed
+    end
+end
+
+local function StartWalkSpeedLoop()
+    if WalkSpeedConfig.Connection then
+        WalkSpeedConfig.Connection:Disconnect()
+    end
+    
+    WalkSpeedConfig.Connection = RunService.RenderStepped:Connect(function()
+        ApplyWalkSpeed()
+    end)
+end
+
+local function StopWalkSpeedLoop()
+    if WalkSpeedConfig.Connection then
+        WalkSpeedConfig.Connection:Disconnect()
+        WalkSpeedConfig.Connection = nil
+    end
+    
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = WalkSpeedConfig.OriginalWalkSpeed
+        end
+    end
+end
+
+SaveOriginalWalkSpeed()
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    SaveOriginalWalkSpeed()
+    if WalkSpeedConfig.Enabled then
+        StartWalkSpeedLoop()
+    end
+end)
+
+WalkSpeedGroupBox:AddToggle("WalkSpeedEnabled", {
+    Text = "Activer WalkSpeed",
+    Default = false,
+    Callback = function(Value)
+        WalkSpeedConfig.Enabled = Value
+        if Value then
+            StartWalkSpeedLoop()
+        else
+            StopWalkSpeedLoop()
+        end
+    end,
+})
+
+WalkSpeedGroupBox:AddSlider("WalkSpeedValue", {
+    Text = "Vitesse de marche",
+    Default = 32,
+    Min = 16,
+    Max = 100,
+    Rounding = 0,
+    Callback = function(Value)
+        WalkSpeedConfig.Value = Value
+        if WalkSpeedConfig.Enabled then
+            ApplyWalkSpeed()
+        end
+    end,
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- ==========================
+-- SHOTGUN RAGE
+-- ==========================
+
+
+local ShotgunRageGroupBox = Tabs.Rage:AddLeftGroupbox("Shotgun Rage")
+
+local ShotgunRageConfig = {
+	Enabled = false,
+	OrbitAngle = 0,
+	OrbitRadius = 5,
+	OrbitHeight = 8,
+	OrbitSpeed = 72000, -- Rotation ultra-rapide (200x 360 degrÃ©s/seconde)
+}
+
+local ShotgunRageConnection = nil
+
+local function toggleShotgunRage(enabled)
+	ShotgunRageConfig.Enabled = enabled
+	
+	if ShotgunRageConnection then
+		ShotgunRageConnection:Disconnect()
+		ShotgunRageConnection = nil
+	end
+	
+	if enabled then
+		ShotgunRageConnection = RunService.Heartbeat:Connect(function(deltaTime)
+			if not ShotgunRageConfig.Enabled then return end
+			
+			local character = LocalPlayer.Character
+			if not character then return end
+			
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if not humanoid or humanoid.Health <= 0 then return end
+			
+			local rootPart = character:FindFirstChild("HumanoidRootPart")
+			if not rootPart then return end
+			
+			-- DÃ©sancrer pour permettre le mouvement
+			rootPart.Anchored = false
+			
+			-- Trouver le joueur le plus proche (vivant uniquement)
+			local closestPlayer = nil
+			local closestDistance = math.huge
+			
+			for _, otherPlayer in ipairs(Players:GetPlayers()) do
+				if otherPlayer ~= LocalPlayer then
+					local otherCharacter = otherPlayer.Character
+					if otherCharacter then
+						local otherHRP = otherCharacter:FindFirstChild("HumanoidRootPart")
+						local otherHumanoid = otherCharacter:FindFirstChildOfClass("Humanoid")
+						if otherHRP and otherHumanoid and otherHumanoid.Health > 0 then
+							local distance = (otherHRP.Position - rootPart.Position).Magnitude
+							if distance < closestDistance and distance < 1000000 then
+								closestDistance = distance
+								closestPlayer = otherPlayer
+							end
+						end
+					end
+				end
+			end
+			
+			if closestPlayer then
+				local targetCharacter = closestPlayer.Character
+				if not targetCharacter then return end
+				
+				local targetHRP = targetCharacter:FindFirstChild("HumanoidRootPart")
+				if not targetHRP then return end
+				
+				local targetHead = targetCharacter:FindFirstChild("Head")
+				if not targetHead then return end
+				
+				-- Orbiter autour du joueur cible dans le ciel
+				ShotgunRageConfig.OrbitAngle = ShotgunRageConfig.OrbitAngle + (deltaTime * ShotgunRageConfig.OrbitSpeed)
+				local x = math.cos(math.rad(ShotgunRageConfig.OrbitAngle)) * ShotgunRageConfig.OrbitRadius
+				local z = math.sin(math.rad(ShotgunRageConfig.OrbitAngle)) * ShotgunRageConfig.OrbitRadius
+				
+				local orbitPosition = targetHRP.Position + Vector3.new(x, ShotgunRageConfig.OrbitHeight, z)
+				
+				-- Utiliser Humanoid:MoveTo() pour la synchronisation serveur
+				humanoid:MoveTo(orbitPosition)
+				
+				-- Orienter le personnage aprÃ¨s le mouvement
+				task.wait()
+				rootPart.CFrame = CFrame.new(orbitPosition, targetHRP.Position)
+				
+				-- Lock camÃ©ra sur la tÃªte de la cible
+				local camera = workspace.CurrentCamera
+				if camera then
+					local fixedCameraPos = targetHRP.Position + Vector3.new(0, 2, 4)
+					camera.CFrame = CFrame.new(fixedCameraPos, targetHead.Position)
+				end
+			end
+		end)
+	end
+end
+
+-- Interface Shotgun Rage
+ShotgunRageGroupBox:AddToggle('ShotgunRageEnabled', {
+    Text = 'Activer Shotgun Rage',
+    Default = false,
+    Callback = function(Value)
+        toggleShotgunRage(Value)
+    end
+})
+
+ShotgunRageGroupBox:AddLabel('Keybind Shotgun Rage'):AddKeyPicker('ShotgunRageKeybind', {
+    Default = 'None',
+    Mode = 'Toggle',
+    Text = 'Keybind Shotgun Rage',
+    Callback = function()
+        local currentState = Toggles.ShotgunRageEnabled.Value
+        Toggles.ShotgunRageEnabled:SetValue(not currentState)
+        
+        if not currentState then
+            toggleShotgunRage(true)
+        else
+            toggleShotgunRage(false)
+        end
+    end
+})
+
+ShotgunRageGroupBox:AddSlider('ShotgunRageOrbitRadius', {
+    Text = 'Rayon d\'orbite',
+    Default = 5,
+    Min = 2,
+    Max = 15,
+    Rounding = 0,
+    Callback = function(Value)
+        ShotgunRageConfig.OrbitRadius = Value
+    end
+})
+
+ShotgunRageGroupBox:AddSlider('ShotgunRageOrbitHeight', {
+    Text = 'Hauteur d\'orbite',
+    Default = 8,
+    Min = 2,
+    Max = 20,
+    Rounding = 0,
+    Callback = function(Value)
+        ShotgunRageConfig.OrbitHeight = Value
+    end
+})
+
+ShotgunRageGroupBox:AddSlider('ShotgunRageOrbitSpeed', {
+    Text = 'Vitesse d\'orbite',
+    Default = 72000,
+    Min = 1000,
+    Max = 144000,
+    Rounding = 0,
+    Callback = function(Value)
+        ShotgunRageConfig.OrbitSpeed = Value
+    end
+})
+--camera desync
+
+local CameraConnection
+
+local Config = {
+    Enabled = false,
+    SavedCFrame = nil,
+    SavedType = nil,
+    SavedSubject = nil,
+}
+
+local function ToggleCamera(State)
+    Config.Enabled = State
+
+    if CameraConnection then
+        CameraConnection:Disconnect()
+        CameraConnection = nil
+    end
+
+    local cam = workspace.CurrentCamera
+    
+    if State then
+        Config.SavedCFrame = cam.CFrame
+        Config.SavedType = cam.CameraType
+        Config.SavedSubject = cam.CameraSubject
+
+        cam.CameraType = Enum.CameraType.Scriptable
+
+        CameraConnection = RunService.RenderStepped:Connect(function()
+            cam.CFrame = Config.SavedCFrame
+        end)
+    else
+        cam.CameraType = Config.SavedType or Enum.CameraType.Custom
+        cam.CameraSubject = Config.SavedSubject
+    end
+end
+
+
+ShotgunRageGroupBox:AddToggle('FreezeCamera', {
+    Text = 'Freeze Camera',
+    Default = false,
+    Callback = function(Value)
+        ToggleCamera(Value)
+    end
+})
+
+ShotgunRageGroupBox:AddLabel('Keybind'):AddKeyPicker('FreezeCameraKeybind', {
+    Default = 'None',
+    Mode = 'Toggle',
+    Text = 'Freeze Camera',
+    Callback = function()
+        Toggles.FreezeCamera:SetValue(not Toggles.FreezeCamera.Value)
+    end
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- ==========================
+-- JUMP
+-- ==========================
+local JumpGroupBox = Tabs.Player:AddGroupbox({
+    Side = "Left",
+    Name = "Jump",
+})
+
+local JumpConfig = {
+    Enabled = false,
+    Value = 100,
+    OriginalJumpPower = 50,
+    Connection = nil,
+}
+
+local function SaveOriginalJumpPower()
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            JumpConfig.OriginalJumpPower = humanoid.JumpPower
+        end
+    end
+end
+
+local function ApplyJumpPower()
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    
+    if JumpConfig.Enabled then
+        humanoid.JumpPower = JumpConfig.Value
+    else
+        humanoid.JumpPower = JumpConfig.OriginalJumpPower
+    end
+end
+
+local function StartJumpLoop()
+    if JumpConfig.Connection then
+        JumpConfig.Connection:Disconnect()
+    end
+    
+    JumpConfig.Connection = RunService.RenderStepped:Connect(function()
+        ApplyJumpPower()
+    end)
+end
+
+local function StopJumpLoop()
+    if JumpConfig.Connection then
+        JumpConfig.Connection:Disconnect()
+        JumpConfig.Connection = nil
+    end
+    
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.JumpPower = JumpConfig.OriginalJumpPower
+        end
+    end
+end
+
+SaveOriginalJumpPower()
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    SaveOriginalJumpPower()
+    if JumpConfig.Enabled then
+        StartJumpLoop()
+    end
+end)
+
+JumpGroupBox:AddToggle("JumpEnabled", {
+    Text = "Activer Jump Power",
+    Default = false,
+    Callback = function(Value)
+        JumpConfig.Enabled = Value
+        if Value then
+            StartJumpLoop()
+        else
+            StopJumpLoop()
+        end
+    end,
+})
+
+JumpGroupBox:AddSlider("JumpValue", {
+    Text = "Puissance de saut",
+    Default = 100,
+    Min = 50,
+    Max = 200,
+    Rounding = 0,
+    Callback = function(Value)
+        JumpConfig.Value = Value
+        if JumpConfig.Enabled then
+            ApplyJumpPower()
+        end
+    end,
+})
+
+-- ==========================
+-- MOVEMENT
+-- ==========================
+local MovementGroupBox = Tabs.Player:AddGroupbox({
+    Side = "Right",
+    Name = "Movement",
+})
+
+local MovementConfig = {
+    NoClip = false,
+    Fly = false,
+    FlySpeed = 50,
+    VelocitySpeed = false,
+    VelocitySpeedValue = 50,
+    Connection = nil,
+    VelocityConnection = nil,
+}
+
+local function StartNoClip()
+    if MovementConfig.Connection then
+        MovementConfig.Connection:Disconnect()
+    end
+    
+    MovementConfig.Connection = RunService.RenderStepped:Connect(function()
+        if not MovementConfig.NoClip then return end
+        
+        local character = LocalPlayer.Character
+        if not character then return end
+        
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end)
+end
+
+local function StopNoClip()
+    if MovementConfig.Connection then
+        MovementConfig.Connection:Disconnect()
+        MovementConfig.Connection = nil
+    end
+    
+    local character = LocalPlayer.Character
+    if character then
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+        end
+    end
+end
+
+local FlyKeys = {
+    W = false, A = false, S = false, D = false,
+    Space = false, LeftShift = false,
+}
+
+local KeyCodeMap = {
+    [Enum.KeyCode.W] = "W", [Enum.KeyCode.A] = "A",
+    [Enum.KeyCode.S] = "S", [Enum.KeyCode.D] = "D",
+    [Enum.KeyCode.Space] = "Space", [Enum.KeyCode.LeftShift] = "LeftShift",
+}
+
+UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
+    if gameProcessedEvent then return end
+    local mapped = KeyCodeMap[input.KeyCode]
+    if mapped then
+        FlyKeys[mapped] = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessedEvent)
+    local mapped = KeyCodeMap[input.KeyCode]
+    if mapped then
+        FlyKeys[mapped] = false
+    end
+end)
+
+local function StartFly()
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return end
+    
+    humanoidRootPart.Anchored = true
+    
+    if MovementConfig.Connection then
+        MovementConfig.Connection:Disconnect()
+    end
+    
+    MovementConfig.Connection = RunService.RenderStepped:Connect(function(deltaTime)
+        if not MovementConfig.Fly then return end
+        
+        local character = LocalPlayer.Character
+        if not character then return end
+        
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if not humanoidRootPart then return end
+        
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+        
+        local moveDirection = Vector3.new()
+        if FlyKeys.W then moveDirection += camera.CFrame.LookVector end
+        if FlyKeys.S then moveDirection -= camera.CFrame.LookVector end
+        if FlyKeys.A then moveDirection -= camera.CFrame.RightVector end
+        if FlyKeys.D then moveDirection += camera.CFrame.RightVector end
+        if FlyKeys.Space then moveDirection += Vector3.new(0, 1, 0) end
+        if FlyKeys.LeftShift then moveDirection -= Vector3.new(0, 1, 0) end
+        
+        if moveDirection.Magnitude > 0 then
+            moveDirection = moveDirection.Unit
+        end
+        
+        local newPosition = humanoidRootPart.Position + (moveDirection * MovementConfig.FlySpeed * deltaTime)
+        humanoidRootPart.CFrame = CFrame.new(newPosition)
+    end)
+end
+
+local function StopFly()
+    if MovementConfig.Connection then
+        MovementConfig.Connection:Disconnect()
+        MovementConfig.Connection = nil
+    end
+    
+    local character = LocalPlayer.Character
+    if character then
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if humanoidRootPart then
+            humanoidRootPart.Anchored = false
+        end
+    end
+end
+
+local function StartVelocitySpeed()
+    if MovementConfig.VelocityConnection then
+        MovementConfig.VelocityConnection:Disconnect()
+    end
+    
+    MovementConfig.VelocityConnection = RunService.Heartbeat:Connect(function()
+        if not MovementConfig.VelocitySpeed then return end
+        
+        local character = LocalPlayer.Character
+        if not character then return end
+        
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if not humanoidRootPart then return end
+        
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        
+        -- Appliquer une vélocité constante dans la direction du mouvement
+        local moveDirection = humanoid.MoveDirection
+        if moveDirection.Magnitude > 0 then
+            humanoidRootPart.AssemblyLinearVelocity = moveDirection.Unit * MovementConfig.VelocitySpeedValue
+        end
+    end)
+end
+
+local function StopVelocitySpeed()
+    if MovementConfig.VelocityConnection then
+        MovementConfig.VelocityConnection:Disconnect()
+        MovementConfig.VelocityConnection = nil
+    end
+end
+
+MovementGroupBox:AddToggle("NoClipEnabled", {
+    Text = "NoClip",
+    Default = false,
+    Callback = function(Value)
+        MovementConfig.NoClip = Value
+        if Value then
+            StartNoClip()
+        else
+            StopNoClip()
+        end
+    end,
+})
+
+MovementGroupBox:AddToggle("FlyEnabled", {
+    Text = "Fly",
+    Default = false,
+    Callback = function(Value)
+        MovementConfig.Fly = Value
+        if Value then
+            StartFly()
+        else
+            StopFly()
+        end
+    end,
+})
+
+MovementGroupBox:AddSlider("FlySpeed", {
+    Text = "Vitesse de vol",
+    Default = 50,
+    Min = 10,
+    Max = 200,
+    Rounding = 0,
+    Callback = function(Value)
+        MovementConfig.FlySpeed = Value
+    end,
+})
+
+MovementGroupBox:AddDivider()
+
+MovementGroupBox:AddToggle("VelocitySpeedEnabled", {
+    Text = "Velocity Speed",
+    Default = false,
+    Callback = function(Value)
+        MovementConfig.VelocitySpeed = Value
+        if Value then
+            StartVelocitySpeed()
+        else
+            StopVelocitySpeed()
+        end
+    end,
+})
+
+MovementGroupBox:AddSlider("VelocitySpeedValue", {
+    Text = "Vélocité",
+    Default = 50,
+    Min = 10,
+    Max = 200,
+    Rounding = 0,
+    Callback = function(Value)
+        MovementConfig.VelocitySpeedValue = Value
+    end,
+})
+
+-- ==========================
+-- CAMERA
+-- ==========================
+local CameraGroupBox = Tabs.Player:AddGroupbox({
+    Side = "Right",
+    Name = "Camera",
+})
+
+local CameraConfig = {
+    FOVEnabled = false,
+    FOVValue = 70,
+    OriginalFOV = 70,
+}
+
+local function ApplyFOV()
+    local camera = workspace.CurrentCamera
+    if camera then
+        if CameraConfig.FOVEnabled then
+            camera.FieldOfView = CameraConfig.FOVValue
+        else
+            camera.FieldOfView = CameraConfig.OriginalFOV
+        end
+    end
+end
+
+CameraGroupBox:AddToggle("FOVEnabled", {
+    Text = "FOV personnalisé",
+    Default = false,
+    Callback = function(Value)
+        CameraConfig.FOVEnabled = Value
+        ApplyFOV()
+    end,
+})
+
+CameraGroupBox:AddSlider("FOVValue", {
+    Text = "Valeur FOV",
+    Default = 70,
+    Min = 30,
+    Max = 120,
+    Rounding = 0,
+    Callback = function(Value)
+        CameraConfig.FOVValue = Value
+        if CameraConfig.FOVEnabled then
+            ApplyFOV()
+        end
+    end,
+})
+
+-- ==========================
+-- MISC
+-- ==========================
+local MiscGroupBox = Tabs.Player:AddGroupbox({
+    Side = "Right",
+    Name = "Misc",
+})
+
+local MiscConfig = {
+    InfiniteJump = false,
+    AutoClicker = false,
+    AutoClickerSpeed = 0.1,
+    AutoClickerConnection = nil,
+    SwapOnLowAmmo = false,
+    LowAmmoThreshold = 5,
+    SwapConnection = nil,
+}
+
+local function StartAutoClicker()
+    if MiscConfig.AutoClickerConnection then
+        MiscConfig.AutoClickerConnection:Disconnect()
+    end
+    
+    MiscConfig.AutoClickerConnection = task.spawn(function()
+        while MiscConfig.AutoClicker do
+            if mouse1click then
+                mouse1click()
+            end
+            task.wait(MiscConfig.AutoClickerSpeed)
+        end
+    end)
+end
+
+local function StopAutoClicker()
+    MiscConfig.AutoClicker = false
+    if MiscConfig.AutoClickerConnection then
+        MiscConfig.AutoClickerConnection = nil
+    end
+end
+
+UserInputService.JumpRequest:Connect(function()
+    if MiscConfig.InfiniteJump then
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid:ChangeState("Jumping")
+            end
+        end
+    end
+end)
+
+local function StartSwapOnLowAmmo()
+    if MiscConfig.SwapConnection then
+        MiscConfig.SwapConnection:Disconnect()
+    end
+    
+    MiscConfig.SwapConnection = RunService.Heartbeat:Connect(function()
+        if not MiscConfig.SwapOnLowAmmo then return end
+        
+        local character = LocalPlayer.Character
+        if not character then return end
+        
+        -- Chercher les munitions dans le personnage
+        for _, item in pairs(character:GetDescendants()) do
+            if item:IsA("IntValue") and (item.Name:lower():find("ammo") or item.Name:lower():find("bullet")) then
+                if item.Value <= MiscConfig.LowAmmoThreshold then
+                    -- Swap automatiquement d'arme
+                    local player = LocalPlayer
+                    local backpack = player:FindFirstChild("Backpack")
+                    if backpack then
+                        -- Trouver une autre arme
+                        for _, tool in pairs(backpack:GetChildren()) do
+                            if tool:IsA("Tool") and tool ~= character:FindFirstChildOfClass("Tool") then
+                                -- Équiper l'autre arme
+                                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                                if humanoid then
+                                    humanoid:EquipTool(tool)
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function StopSwapOnLowAmmo()
+    if MiscConfig.SwapConnection then
+        MiscConfig.SwapConnection:Disconnect()
+        MiscConfig.SwapConnection = nil
+    end
+end
+
+MiscGroupBox:AddToggle("InfiniteJump", {
+    Text = "Infinite Jump",
+    Default = false,
+    Callback = function(Value)
+        MiscConfig.InfiniteJump = Value
+    end,
+})
+
+MiscGroupBox:AddToggle("AutoClicker", {
+    Text = "Auto Clicker",
+    Default = false,
+    Callback = function(Value)
+        MiscConfig.AutoClicker = Value
+        if Value then
+            StartAutoClicker()
+        else
+            StopAutoClicker()
+        end
+    end,
+})
+
+MiscGroupBox:AddSlider("AutoClickerSpeed", {
+    Text = "Vitesse auto-click (s)",
+    Default = 0.1,
+    Min = 0.01,
+    Max = 1,
+    Rounding = 2,
+    Callback = function(Value)
+        MiscConfig.AutoClickerSpeed = Value
+    end,
+})
+
+MiscGroupBox:AddDivider()
+
+MiscGroupBox:AddToggle("SwapOnLowAmmoEnabled", {
+    Text = "Swap on Low Ammo",
+    Default = false,
+    Callback = function(Value)
+        MiscConfig.SwapOnLowAmmo = Value
+        if Value then
+            StartSwapOnLowAmmo()
+        else
+            StopSwapOnLowAmmo()
+        end
+    end,
+})
+
+MiscGroupBox:AddSlider("LowAmmoThreshold", {
+    Text = "Seuil munitions",
+    Default = 5,
+    Min = 1,
+    Max = 20,
+    Rounding = 0,
+    Callback = function(Value)
+        MiscConfig.LowAmmoThreshold = Value
+    end,
+})
+
+--=========================================================
+-- CONFIG (Menu UI Settings + SaveManager + ThemeManager)
+--=========================================================
+
+--// Groupbox "Menu" : toutes les options UI Settings de l'exemple officiel
+local MenuGroup = Tabs.Config:AddGroupbox({
+    Side = "Left",
+    Name = "Menu",
+    IconName = "wrench",
+})
+
+MenuGroup:AddToggle("KeybindMenuOpen", {
+    Default = Library.KeybindFrame.Visible,
+    Text = "Open Keybind Menu",
+    Callback = function(value)
+        Library.KeybindFrame.Visible = value
+    end,
+})
+
+MenuGroup:AddToggle("ShowCustomCursor", {
+    Text = "Custom Cursor",
+    Default = Library.ShowCustomCursor,
+    Callback = function(Value)
+        Library.ShowCustomCursor = Value
+    end,
+})
+
+MenuGroup:AddToggle("AlwaysOnTop", {
+    Text = "Always On Top",
+    Default = Window.AlwaysOnTop,
+    Callback = function(Value)
+        Window:SetAlwaysOnTop(Value)
+    end,
+})
+
+MenuGroup:AddDropdown("NotificationSide", {
+    Values = { "Left", "Right" },
+    Default = "Right",
+    Text = "Notification Side",
+    Callback = function(Value)
+        Library:SetNotifySide(Value)
+    end,
+})
+
+MenuGroup:AddDropdown("DPIDropdown", {
+    Values = { "50%", "75%", "100%", "125%", "150%", "175%", "200%" },
+    Default = "100%",
+    Text = "DPI Scale",
+    Callback = function(Value)
+        Value = Value:gsub("%%", "")
+        local DPI = tonumber(Value)
+        Library:SetDPIScale(DPI)
+    end,
+})
+
+MenuGroup:AddSlider("UICornerSlider", {
+    Text = "Corner Radius",
+    Default = Library.CornerRadius,
+    Min = 0,
+    Max = 20,
+    Rounding = 0,
+    Callback = function(value)
+        Window:SetCornerRadius(value)
+    end,
+})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind")
+    :AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = true, Text = "Menu keybind" })
+
+MenuGroup:AddButton("Unload", function()
+    Library:Unload()
+end)
+
+Library.ToggleKeybind = Options.MenuKeybind -- Keybind custom pour ouvrir/fermer le menu
+
+--// SaveManager + ThemeManager
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+
+-- On ignore les réglages de thème dans les configs (gérés par ThemeManager)
+SaveManager:IgnoreThemeSettings()
+
+-- On ne veut pas que chaque config ait un keybind de menu différent
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+
+-- Construit la section config (droite) et le thème avec ses presets intégrés
+-- (gauche), sans dossier personnalisé (comportement par défaut d'Obsidian)
+SaveManager:BuildConfigSection(Tabs.Config)
+ThemeManager:ApplyToTab(Tabs.Config)
+
+-- Charge la config marquée en autoload s'il y en a une
+SaveManager:LoadAutoloadConfig()
+
+Library:OnUnload(function()
+    if OrientHeartbeatConnection then
+        OrientHeartbeatConnection:Disconnect()
+    end
+    if SavedCameraType then
+        workspace.CurrentCamera.CameraType = SavedCameraType
+    end
+    StopFOVLoop()
+    DisableGroundRage()
+    DisableKnifeRage()
+    DisableMeshFist()
+    StopVelocitySpeed()
+    StopSwapOnLowAmmo()
+    if AntiKatanaConfig.Connection then
+        AntiKatanaConfig.Connection:Disconnect()
+        AntiKatanaConfig.Connection = nil
+    end
+    print("Rift Counter BETA déchargé.")
+end)
+
+print("Rift Counter BETA chargé avec succès.")
